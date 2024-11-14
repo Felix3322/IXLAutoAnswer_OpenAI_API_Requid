@@ -83,4 +83,4 @@ This script automates the process of answering math questions on IXL by using th
 - **OpenAI API Key**: Users must have an OpenAI account and API key for the script to function.
 - **Tampermonkey**: A userscript manager such as Tampermonkey is necessary to run the script.
 
-This script is ideal for students, educators, and those seeking an automated solution for math questions on IXL, making it a valuable tool for efficient problem-solving.
+This script is ideal for students, lazy man like me, and those seeking an automated solution for math questions on IXL, making it a valuable tool for efficient problem-solving.
