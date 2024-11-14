@@ -8,10 +8,10 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
 // ==/UserScript==
- 
+
 (function() {
     'use strict';
- 
+
     let API_KEY = "";  // Initialize API_KEY variable
 
     // Function to load API key from local storage
