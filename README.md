@@ -7,17 +7,22 @@
 This is a **Tampermonkey script** designed to automate answering math questions on the IXL platform. It requires a userscript manager like **Tampermonkey** (available for most browsers) or similar alternatives to run effectively. **For a streamlined installation, you can directly access the script on [Greasy Fork](https://greasyfork.org/zh-CN/scripts/517259-ixl-auto-answer-openai-api-requid).**
 
 #### **Installation Steps**:
-1. **One-Click Installation**:
+1. **One-Click Installation (If you already installed Tampermonkey)**:
    - Visit the script’s page on Greasy Fork at: [IXL Auto Answer on Greasy Fork](https://greasyfork.org/zh-CN/scripts/517259-ixl-auto-answer-openai-api-requid).
    - Click on **Install** to add the script to your Tampermonkey dashboard.
-   - 
+   - Thats it, You can proceed directly to **step 4** now.
+
 2. **Install Tampermonkey** (or a similar script manager):
    - [Tampermonkey for Chrome](https://chrome.google.com/webstore/detail/dhdgffkkebhmkfjojejmpbldmpobfkfo)
    - [Tampermonkey for Firefox](https://addons.mozilla.org/en-US/firefox/addon/tampermonkey/)
    - [Tampermonkey for Safari](https://apps.apple.com/app/apple-store/id1482490089)
    - Alternatively, use other script managers like **Greasemonkey**.
 
-3. **Setup OpenAI API Key**:
+3. **Installation script**:
+   - Visit the script’s page on Greasy Fork at: [IXL Auto Answer on Greasy Fork](https://greasyfork.org/zh-CN/scripts/517259-ixl-auto-answer-openai-api-requid).
+   - Click on **Install** to add the script to your Tampermonkey dashboard.
+
+4. **Setup OpenAI API Key**:
    - The script will prompt you to enter your OpenAI API key upon first use. This key is required to enable the answering functionality, as it connects to the OpenAI API for generating solutions.
 
 ---
