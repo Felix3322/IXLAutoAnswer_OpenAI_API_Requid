@@ -2,6 +2,10 @@
 
 ---
 
+### *This repository is only used for: reporting issues, submitting pull requests, requesting features, and communicating with the author. This repository will reflect the latest progress of the script and may not be stable. Ordinary users should go to the [Greasy Fork](https://greasyfork.org/zh-CN/scripts/517259-ixl-auto-answer-openai-api-requid).*
+
+---
+
 ### **Installation Guide**
 
 This is a **Tampermonkey script** designed to automate answering math questions on the IXL platform. It requires a userscript manager like **Tampermonkey** (available for most browsers) or similar alternatives to run effectively. **For a streamlined installation, you can directly access the script on [Greasy Fork](https://greasyfork.org/zh-CN/scripts/517259-ixl-auto-answer-openai-api-requid).**
