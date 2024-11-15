@@ -4,7 +4,7 @@
 // @version      5.4
 // @license CC-BY NC
 // @description  Sends HTML and canvas data to GPT-4o for math problem solving with enhanced accuracy, GUI, and auto-answering functionality
-// @match        https://ca.ixl.com/*
+// @match        *://*.ixl.com/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
 // ==/UserScript==
