@@ -4,38 +4,32 @@
 // @version      5.4
 // @license CC-BY NC
 // @description  Sends HTML and canvas data to GPT-4o for math problem solving with enhanced accuracy, GUI, and auto-answering functionality
-// @match        *://*.ixl.com/*
+// @match        https://ca.ixl.com/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
 // ==/UserScript==
-
+ 
 (function() {
     'use strict';
-
-    let API_KEY = "";  // Initialize API_KEY variable
-
-    // Function to load API key from local storage
-    function loadApiKey() {
-        API_KEY = localStorage.getItem("gpt4o-api-key") || "";  // Load API key from storage
-        document.getElementById("api-key-input").value = API_KEY;  // Update input field in GUI
-    }
-
-    // Function to save API key to local storage
-    function saveApiKey() {
-        API_KEY = document.getElementById("api-key-input").value;
-        localStorage.setItem("gpt4o-api-key", API_KEY);  // Save API key
-        logMessage("API Key saved.");
-    }
-
-    // Call loadApiKey to initialize API key on script load
-    loadApiKey();
-
+ 
+    let API_KEY = localStorage.getItem("gpt4o-api-key") || "";  // Load API key from storage
     const API_URL = "https://api.openai.com/v1/chat/completions";
     let selectedModel = "gpt-4o";
     let autoAnswerModeEnabled = false;
     let autoSubmitEnabled = false;
     let language = localStorage.getItem("gpt4o-language") || "en";  // Default to English and load stored language
-
+ 
+    // Prompt for API key if not set
+    if (!API_KEY) {
+        API_KEY = prompt("Please enter your OpenAI API key:");
+        if (API_KEY) {
+            localStorage.setItem("gpt4o-api-key", API_KEY);  // Save API key
+        } else {
+            alert("API key is required to use this tool.");
+            return;
+        }
+    }
+ 
     // Text content for different languages
     const langText = {
         en: {
@@ -79,7 +73,7 @@
             closeButton: "关闭",
         }
     };
-
+ 
     const panel = document.createElement('div');
     panel.id = "gpt4o-panel";
     panel.innerHTML = `
@@ -88,10 +82,6 @@
             <button id="close-button" style="float: right; background-color: #d9534f; color: white; border: none; padding: 2px 6px; cursor: pointer;">${langText[language].closeButton}</button>
         </div>
         <div style="padding: 10px;">
-            <label style="display: block; margin-bottom: 10px;">
-                API Key: <input type="text" id="api-key-input" style="width: 100%;" placeholder="Enter API Key">
-                <button id="save-api-key" style="margin-top: 5px;">Save API Key</button>
-            </label>
             <button id="start-answering">${langText[language].startAnswering}</button>
             <label>
                 <input type="radio" name="model" value="gpt-4o" checked> GPT-4o
@@ -117,12 +107,12 @@
         </div>
     `;
     document.body.appendChild(panel);
-
+ 
     // Make the panel draggable
     function makeDraggable(element) {
         let posX = 0, posY = 0, initX = 0, initY = 0;
         const header = document.getElementById("gpt4o-header");
-
+ 
         header.onmousedown = function(e) {
             e.preventDefault();
             initX = e.clientX;
@@ -130,7 +120,7 @@
             document.onmouseup = closeDrag;
             document.onmousemove = drag;
         };
-
+ 
         function drag(e) {
             e.preventDefault();
             posX = initX - e.clientX;
@@ -141,29 +131,26 @@
             element.style.left = (element.offsetLeft - posX) + "px";
             element.style.pointerEvents = "auto";
         }
-
+ 
         function closeDrag() {
             document.onmouseup = null;
             document.onmousemove = null;
         }
     }
-
+ 
     makeDraggable(panel);
-
+ 
     document.getElementById("close-button").addEventListener("click", function() {
         panel.style.display = "none";
     });
-
+ 
     document.getElementById("language-select").addEventListener("change", function() {
         language = this.value;
         localStorage.setItem("gpt4o-language", language);
         updateTextContent();
         logMessage(`${langText[language].logLanguageSet}: ${language}`);
     });
-
-    // Add event listener to save API key button
-    document.getElementById("save-api-key").addEventListener("click", saveApiKey);
-
+ 
     function updateTextContent() {
         document.getElementById("start-answering").textContent = langText[language].startAnswering;
         document.getElementById("auto-answer-mode-toggle").nextSibling.textContent = langText[language].autoAnsweringMode;
@@ -171,17 +158,17 @@
         document.getElementById("close-button").textContent = langText[language].closeButton;
         document.getElementById("status").textContent = langText[language].statusWaiting;
     }
-
+ 
     function logMessage(message) {
         const logDiv = document.getElementById('log');
         logDiv.innerHTML += `<p>${message}</p>`;
         logDiv.scrollTop = logDiv.scrollHeight;
     }
-
+ 
     function sanitizeCode(codeString) {
         return codeString.replace(/^```(?:js|javascript)?\s*/i, "").replace(/```$/i, "").trim();
     }
-
+ 
     // Capture canvas element if present in the question
     function captureCanvasImage(htmlElement) {
         const canvas = htmlElement.querySelector('canvas');
@@ -196,7 +183,7 @@
         }
         return null;
     }
-
+ 
     function sendContentToGPT(htmlContent, canvasDataUrl) {
         const requestPayload = {
             model: selectedModel,
@@ -211,11 +198,11 @@
                 }
             ]
         };
-
+ 
         if (canvasDataUrl) {
             requestPayload["image"] = canvasDataUrl;
         }
-
+ 
         GM_xmlhttpRequest({
             method: "POST",
             url: API_URL,
@@ -230,7 +217,7 @@
                     let code = sanitizeCode(data.choices[0].message.content.trim());
                     document.getElementById('status').innerText = langText[language].statusSubmitting;
                     logMessage(`${langText[language].logGeneratedCode}: ${code}`);
-
+ 
                     try {
                         eval(code);
                         if (autoSubmitEnabled) submitAnswer();
@@ -249,7 +236,7 @@
             }
         });
     }
-
+ 
     function submitAnswer() {
         const submitButton = document.evaluate('/html/body/main/div/article/section/section/div/div[1]/section/div/section/div/button', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
         if (submitButton) {
@@ -259,24 +246,24 @@
             logMessage(langText[language].logSubmitNotFound);
         }
     }
-
+ 
     function answerQuestion() {
         document.getElementById('status').innerText = langText[language].statusFetching;
         logMessage(langText[language].logHtmlFetched);
-
+ 
         let targetDiv = document.evaluate('/html/body/main/div/article/section/section/div/div[1]', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-
+ 
         if (!targetDiv) {
             document.getElementById('status').innerText = langText[language].statusFetching;
             logMessage("Error: HTML structure not found, check XPath.");
             return;
         }
-
+ 
         let htmlContent = targetDiv.outerHTML;
         const canvasDataUrl = captureCanvasImage(targetDiv);
         sendContentToGPT(htmlContent, canvasDataUrl);
     }
-
+ 
     function monitorNewQuestions() {
         const observer = new MutationObserver(() => {
             if (autoAnswerModeEnabled) {
@@ -284,13 +271,13 @@
                 answerQuestion();
             }
         });
-
+ 
         const targetNode = document.querySelector("main");
         if (targetNode) {
             observer.observe(targetNode, { childList: true, subtree: true });
         }
     }
-
+ 
     document.getElementById('auto-answer-mode-toggle').addEventListener('change', function() {
         autoAnswerModeEnabled = this.checked;
         logMessage(`${langText[language].logAutoAnswer} ${autoAnswerModeEnabled ? 'enabled' : 'disabled'}`);
@@ -298,16 +285,16 @@
             monitorNewQuestions();
         }
     });
-
+ 
     document.getElementById('auto-submit-toggle').addEventListener('change', function() {
         autoSubmitEnabled = this.checked;
         logMessage(`${langText[language].logAutoSubmit} ${autoSubmitEnabled ? 'enabled' : 'disabled'}`);
     });
-
+ 
     document.getElementById('start-answering').addEventListener('click', function() {
         answerQuestion();
     });
-
+ 
     GM_addStyle(`
         #gpt4o-panel {
             font-family: Arial, sans-serif;
