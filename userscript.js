@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         IXL Auto Answer (OpenAI API Requid)
+// @name         IXL Auto Answer (OpenAI API Required)
 // @namespace    http://tampermonkey.net/
 // @version      5.4
 // @license CC-BY NC
@@ -8,17 +8,17 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
 // ==/UserScript==
- 
+
 (function() {
     'use strict';
- 
+
     let API_KEY = localStorage.getItem("gpt4o-api-key") || "";  // Load API key from storage
     const API_URL = "https://api.openai.com/v1/chat/completions";
     let selectedModel = "gpt-4o";
     let autoAnswerModeEnabled = false;
     let autoSubmitEnabled = false;
     let language = localStorage.getItem("gpt4o-language") || "en";  // Default to English and load stored language
- 
+
     // Prompt for API key if not set
     if (!API_KEY) {
         API_KEY = prompt("Please enter your OpenAI API key:");
@@ -29,7 +29,7 @@
             return;
         }
     }
- 
+
     // Text content for different languages
     const langText = {
         en: {
@@ -73,7 +73,7 @@
             closeButton: "关闭",
         }
     };
- 
+
     const panel = document.createElement('div');
     panel.id = "gpt4o-panel";
     panel.innerHTML = `
@@ -107,12 +107,12 @@
         </div>
     `;
     document.body.appendChild(panel);
- 
+
     // Make the panel draggable
     function makeDraggable(element) {
         let posX = 0, posY = 0, initX = 0, initY = 0;
         const header = document.getElementById("gpt4o-header");
- 
+
         header.onmousedown = function(e) {
             e.preventDefault();
             initX = e.clientX;
@@ -120,7 +120,7 @@
             document.onmouseup = closeDrag;
             document.onmousemove = drag;
         };
- 
+
         function drag(e) {
             e.preventDefault();
             posX = initX - e.clientX;
@@ -131,26 +131,26 @@
             element.style.left = (element.offsetLeft - posX) + "px";
             element.style.pointerEvents = "auto";
         }
- 
+
         function closeDrag() {
             document.onmouseup = null;
             document.onmousemove = null;
         }
     }
- 
+
     makeDraggable(panel);
- 
+
     document.getElementById("close-button").addEventListener("click", function() {
         panel.style.display = "none";
     });
- 
+
     document.getElementById("language-select").addEventListener("change", function() {
         language = this.value;
         localStorage.setItem("gpt4o-language", language);
         updateTextContent();
         logMessage(`${langText[language].logLanguageSet}: ${language}`);
     });
- 
+
     function updateTextContent() {
         document.getElementById("start-answering").textContent = langText[language].startAnswering;
         document.getElementById("auto-answer-mode-toggle").nextSibling.textContent = langText[language].autoAnsweringMode;
@@ -158,17 +158,17 @@
         document.getElementById("close-button").textContent = langText[language].closeButton;
         document.getElementById("status").textContent = langText[language].statusWaiting;
     }
- 
+
     function logMessage(message) {
         const logDiv = document.getElementById('log');
         logDiv.innerHTML += `<p>${message}</p>`;
         logDiv.scrollTop = logDiv.scrollHeight;
     }
- 
+
     function sanitizeCode(codeString) {
         return codeString.replace(/^```(?:js|javascript)?\s*/i, "").replace(/```$/i, "").trim();
     }
- 
+
     // Capture canvas element if present in the question
     function captureCanvasImage(htmlElement) {
         const canvas = htmlElement.querySelector('canvas');
@@ -183,26 +183,38 @@
         }
         return null;
     }
- 
+
     function sendContentToGPT(htmlContent, canvasDataUrl) {
+        const messages = [
+            {
+                "role": "system",
+                "content": "You are a math assistant. Carefully analyze the HTML structure and canvas (if provided) to produce executable JavaScript code that fills all required fields based on the question's context. Use only stable selectors like xpath, and ensure each field is filled correctly without explanations or comments."
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": `This is a math question. Use the HTML structure provided to generate JavaScript code that fills each answer field without leaving any fields empty.\n\nHTML Structure:\n${htmlContent}`
+                    }
+                ]
+            }
+        ];
+
+        if (canvasDataUrl) {
+            messages[1]["content"].push({
+                "type": "image_url",
+                "image_url": {
+                    "url": `data:image/png;base64,${canvasDataUrl}`
+                }
+            });
+        }
+
         const requestPayload = {
             model: selectedModel,
-            messages: [
-                {
-                    "role": "system",
-                    "content": "You are a math assistant. Carefully analyze the HTML structure and canvas (if provided) to produce executable JavaScript code that fills all required fields based on the question's context. Use only stable selectors like xpath, and ensure each field is filled correctly without explanations or comments."
-                },
-                {
-                    "role": "user",
-                    "content": `This is a math question. Use the HTML structure provided to generate JavaScript code that fills each answer field without leaving any fields empty.\n\nHTML Structure:\n${htmlContent}`
-                }
-            ]
+            messages: messages
         };
- 
-        if (canvasDataUrl) {
-            requestPayload["image"] = canvasDataUrl;
-        }
- 
+
         GM_xmlhttpRequest({
             method: "POST",
             url: API_URL,
@@ -217,7 +229,7 @@
                     let code = sanitizeCode(data.choices[0].message.content.trim());
                     document.getElementById('status').innerText = langText[language].statusSubmitting;
                     logMessage(`${langText[language].logGeneratedCode}: ${code}`);
- 
+
                     try {
                         eval(code);
                         if (autoSubmitEnabled) submitAnswer();
@@ -236,7 +248,7 @@
             }
         });
     }
- 
+
     function submitAnswer() {
         const submitButton = document.evaluate('/html/body/main/div/article/section/section/div/div[1]/section/div/section/div/button', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
         if (submitButton) {
@@ -246,24 +258,24 @@
             logMessage(langText[language].logSubmitNotFound);
         }
     }
- 
+
     function answerQuestion() {
         document.getElementById('status').innerText = langText[language].statusFetching;
         logMessage(langText[language].logHtmlFetched);
- 
+
         let targetDiv = document.evaluate('/html/body/main/div/article/section/section/div/div[1]', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
- 
+
         if (!targetDiv) {
             document.getElementById('status').innerText = langText[language].statusFetching;
             logMessage("Error: HTML structure not found, check XPath.");
             return;
         }
- 
+
         let htmlContent = targetDiv.outerHTML;
         const canvasDataUrl = captureCanvasImage(targetDiv);
         sendContentToGPT(htmlContent, canvasDataUrl);
     }
- 
+
     function monitorNewQuestions() {
         const observer = new MutationObserver(() => {
             if (autoAnswerModeEnabled) {
@@ -271,13 +283,13 @@
                 answerQuestion();
             }
         });
- 
+
         const targetNode = document.querySelector("main");
         if (targetNode) {
             observer.observe(targetNode, { childList: true, subtree: true });
         }
     }
- 
+
     document.getElementById('auto-answer-mode-toggle').addEventListener('change', function() {
         autoAnswerModeEnabled = this.checked;
         logMessage(`${langText[language].logAutoAnswer} ${autoAnswerModeEnabled ? 'enabled' : 'disabled'}`);
@@ -285,16 +297,16 @@
             monitorNewQuestions();
         }
     });
- 
+
     document.getElementById('auto-submit-toggle').addEventListener('change', function() {
         autoSubmitEnabled = this.checked;
         logMessage(`${langText[language].logAutoSubmit} ${autoSubmitEnabled ? 'enabled' : 'disabled'}`);
     });
- 
+
     document.getElementById('start-answering').addEventListener('click', function() {
         answerQuestion();
     });
- 
+
     GM_addStyle(`
         #gpt4o-panel {
             font-family: Arial, sans-serif;
