@@ -165,8 +165,18 @@
         logDiv.scrollTop = logDiv.scrollHeight;
     }
 
-    function sanitizeCode(codeString) {
-        return codeString.replace(/^```(?:js|javascript)?\s*/i, "").replace(/```$/i, "").trim();
+
+    function sanitizeCode(responseContent) {
+        // 使用正则表达式提取 JavaScript 代码
+        const regex = /```javascript\s+([\s\S]*?)\s+```/i;
+        const match = responseContent.match(regex);
+
+        if (match && match[1]) {
+            return match[1].trim(); // 提取并返回代码部分
+        } else {
+            logMessage("Error: No JavaScript code found in response.");
+            return ""; // 如果没有找到代码，返回空字符串
+        }
     }
 
     // Capture canvas element if present in the question
@@ -188,7 +198,7 @@
         const messages = [
             {
                 "role": "system",
-                "content": "You are a math assistant. Carefully analyze the HTML structure and canvas (if provided) to produce executable JavaScript code. Include your thought process only in comments while using JavaScript to calculate and fill in all required fields. Use stable selectors like XPath to ensure accuracy."
+                "content": "You are a math assistant. Carefully analyze HTML structure and canvas (if provided) to generate executable JavaScript code. Use JavaScript to calculate and fill in all required fields after thinking. Use stable selectors such as XPath to ensure accuracy."
             },
             {
                 "role": "user",
