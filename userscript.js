@@ -188,7 +188,7 @@
         const messages = [
             {
                 "role": "system",
-                "content": "You are a math assistant. Carefully analyze the HTML structure and canvas (if provided) to produce executable JavaScript code that fills all required fields based on the question's context. Use only stable selectors like xpath, and ensure each field is filled correctly without explanations or comments."
+                "content": "You are a math assistant. Carefully analyze the HTML structure and canvas (if provided) to produce executable JavaScript code. Include your thought process only in comments while using JavaScript to calculate and fill in all required fields. Use stable selectors like XPath to ensure accuracy."
             },
             {
                 "role": "user",
