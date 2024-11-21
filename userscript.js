@@ -7,8 +7,6 @@
 // @match        https://ca.ixl.com/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
-// @downloadURL https://update.greasyfork.org/scripts/517259/IXL%20Auto%20Answer%20%28OpenAI%20API%20Required%29.user.js
-// @updateURL https://update.greasyfork.org/scripts/517259/IXL%20Auto%20Answer%20%28OpenAI%20API%20Required%29.meta.js
 // ==/UserScript==
 
 (function() {
