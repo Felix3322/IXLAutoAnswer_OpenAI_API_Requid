@@ -1,12 +1,14 @@
 // ==UserScript==
 // @name         IXL Auto Answer (OpenAI API Required)
 // @namespace    http://tampermonkey.net/
-// @version      5.4
+// @version      6.1
 // @license CC-BY NC
 // @description  Sends HTML and canvas data to GPT-4o for math problem solving with enhanced accuracy, GUI, and auto-answering functionality
 // @match        https://ca.ixl.com/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
+// @downloadURL https://update.greasyfork.org/scripts/517259/IXL%20Auto%20Answer%20%28OpenAI%20API%20Required%29.user.js
+// @updateURL https://update.greasyfork.org/scripts/517259/IXL%20Auto%20Answer%20%28OpenAI%20API%20Required%29.meta.js
 // ==/UserScript==
 
 (function() {
@@ -50,7 +52,11 @@
             logAnswerSubmitted: "Answer submitted automatically",
             logSubmitNotFound: "Submit button not found",
             logHtmlFetched: "Captured HTML structure",
+            logApiKeySet: "API key has been updated",
             closeButton: "Close",
+            setApiKey: "Set API Key",
+            saveApiKey: "Save API Key",
+            apiKeyPlaceholder: "Enter your OpenAI API key",
         },
         zh: {
             startAnswering: "开始答题",
@@ -70,7 +76,11 @@
             logAnswerSubmitted: "答案已自动提交",
             logSubmitNotFound: "未找到提交按钮",
             logHtmlFetched: "获取的 HTML 结构",
+            logApiKeySet: "API 密钥已更新",
             closeButton: "关闭",
+            setApiKey: "设置 API 密钥",
+            saveApiKey: "保存 API 密钥",
+            apiKeyPlaceholder: "输入您的 OpenAI API 密钥",
         }
     };
 
@@ -83,12 +93,19 @@
         </div>
         <div style="padding: 10px;">
             <button id="start-answering">${langText[language].startAnswering}</button>
-            <label>
-                <input type="radio" name="model" value="gpt-4o" checked> GPT-4o
-            </label>
-            <label>
-                <input type="radio" name="model" value="gpt-4o-mini"> GPT-4o-mini
-            </label>
+            <div style="margin-top: 10px;">
+                <span>${langText[language].setApiKey}:</span>
+                <input type="password" id="api-key-input" placeholder="${langText[language].apiKeyPlaceholder}" style="width: 100%; padding: 5px; margin-top: 5px;">
+                <button id="save-api-key" style="margin-top: 5px; width: 100%;">${langText[language].saveApiKey}</button>
+            </div>
+            <div style="margin-top: 10px;">
+                <label>
+                    <input type="radio" name="model" value="gpt-4o" checked> GPT-4o
+                </label>
+                <label>
+                    <input type="radio" name="model" value="gpt-4o-mini"> GPT-4o-mini
+                </label>
+            </div>
             <label style="display: block; margin-top: 10px;">
                 <input type="checkbox" id="auto-answer-mode-toggle"> ${langText[language].autoAnsweringMode}
             </label>
@@ -107,6 +124,12 @@
         </div>
     `;
     document.body.appendChild(panel);
+
+    // Initialize API Key Input with hidden value
+    const apiKeyInput = document.getElementById('api-key-input');
+    if (API_KEY) {
+        apiKeyInput.value = "********"; // Mask the API key
+    }
 
     // Make the panel draggable
     function makeDraggable(element) {
@@ -157,6 +180,9 @@
         document.getElementById("auto-submit-toggle").nextSibling.textContent = langText[language].autoSubmit;
         document.getElementById("close-button").textContent = langText[language].closeButton;
         document.getElementById("status").textContent = langText[language].statusWaiting;
+        document.getElementById("set-api-key-label").textContent = langText[language].setApiKey;
+        document.getElementById("save-api-key").textContent = langText[language].saveApiKey;
+        document.getElementById("api-key-input").placeholder = langText[language].apiKeyPlaceholder;
     }
 
     function logMessage(message) {
@@ -317,6 +343,20 @@
         answerQuestion();
     });
 
+    // Handle API Key Saving
+    document.getElementById('save-api-key').addEventListener('click', function() {
+        const newApiKey = document.getElementById('api-key-input').value.trim();
+        if (newApiKey) {
+            API_KEY = newApiKey;
+            localStorage.setItem("gpt4o-api-key", API_KEY);
+            logMessage(`${langText[language].logApiKeySet}`);
+            // Mask the input field after saving
+            document.getElementById('api-key-input').value = "********";
+        } else {
+            alert("API key cannot be empty.");
+        }
+    });
+
     GM_addStyle(`
         #gpt4o-panel {
             font-family: Arial, sans-serif;
@@ -341,6 +381,19 @@
         }
         #gpt4o-panel button:hover {
             background-color: #45a049;
+        }
+        #gpt4o-panel input[type="password"] {
+            width: calc(100% - 12px);
+            padding: 5px;
+            margin-top: 5px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+        }
+        #gpt4o-panel #save-api-key {
+            background-color: #5bc0de;
+        }
+        #gpt4o-panel #save-api-key:hover {
+            background-color: #31b0d5;
         }
         #log {
             font-family: monospace;
