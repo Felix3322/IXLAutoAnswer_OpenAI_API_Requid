@@ -2,8 +2,6 @@
 
 ### If you want to **check if your API key works**, you can use my website: [keytest.obanarchy.org](https://keytest.obanarchy.org). **I won’t store or storage your API key.**
 
----
-
 > *This repository is only used for: reporting issues, submitting pull requests, requesting features, and communicating with the author. This repository will reflect the latest progress of the script and may not be stable. Ordinary users should go to the [Greasy Fork](https://greasyfork.org/zh-CN/scripts/517259-ixl-auto-answer-openai-api-requid).*
 
 ---
@@ -30,6 +28,8 @@ This is a **Tampermonkey script** designed to automate answering math questions 
 
 4. **Setup OpenAI API Key**:
    - The script will prompt you to enter your OpenAI API key upon first use. This key is required to enable the answering functionality, as it connects to the OpenAI API for generating solutions.
+   > If you want to **check if your API key works**, you can use my website: [keytest.obanarchy.org](https://keytest.obanarchy.org). **I won’t store or storage your API key.**
+
 
 ---
 
