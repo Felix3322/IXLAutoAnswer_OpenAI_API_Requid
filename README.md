@@ -1,4 +1,6 @@
-### Script Name: IXL Auto Answer (OpenAI API Required)
+# IXL Auto Answer (OpenAI API Required)
+
+> If you want to **check whether your API key works**, you can use my website: [keytest.obanarchy.org](https://keytest.obanarchy.org). **I won’t store or storage your API key.**
 
 ---
 
