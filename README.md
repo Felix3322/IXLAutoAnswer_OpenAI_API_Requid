@@ -1,10 +1,10 @@
 # IXL Auto Answer (OpenAI API Required)
 
-> If you want to **check whether your API key works**, you can use my website: [keytest.obanarchy.org](https://keytest.obanarchy.org). **I won’t store or storage your API key.**
+### If you want to **check if your API key works**, you can use my website: [keytest.obanarchy.org](https://keytest.obanarchy.org). **I won’t store or storage your API key.**
 
 ---
 
-### *This repository is only used for: reporting issues, submitting pull requests, requesting features, and communicating with the author. This repository will reflect the latest progress of the script and may not be stable. Ordinary users should go to the [Greasy Fork](https://greasyfork.org/zh-CN/scripts/517259-ixl-auto-answer-openai-api-requid).*
+> *This repository is only used for: reporting issues, submitting pull requests, requesting features, and communicating with the author. This repository will reflect the latest progress of the script and may not be stable. Ordinary users should go to the [Greasy Fork](https://greasyfork.org/zh-CN/scripts/517259-ixl-auto-answer-openai-api-requid).*
 
 ---
 
