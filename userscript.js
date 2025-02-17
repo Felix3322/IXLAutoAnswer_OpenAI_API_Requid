@@ -1,20 +1,20 @@
 // ==UserScript==
 // @name         IXL Auto Answer (OpenAI API Required)
 // @namespace    http://tampermonkey.net/
-// @version      7.0
+// @version      7.2-modified-with-logging
 // @license      GPL-3.0
-// @description  Sends HTML and canvas data to AI models for math problem solving with enhanced accuracy, a configurable API base, an improved GUI with progress bar and auto-answer functionality.
+// @description  Sends HTML and canvas data to AI models for math problem solving with enhanced accuracy, a configurable API base, an improved GUI with progress bar and auto-answer functionality. Added logging for JS errors and GPT request errors.
 // @match        https://*.ixl.com/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
-// @downloadURL https://update.greasyfork.org/scripts/517259/IXL%20Auto%20Answer%20%28OpenAI%20API%20Required%29.user.js
-// @updateURL https://update.greasyfork.org/scripts/517259/IXL%20Auto%20Answer%20%28OpenAI%20API%20Required%29.meta.js
+// @downloadURL  https://update.greasyfork.org/scripts/517259/IXL%20Auto%20Answer%20%28OpenAI%20API%20Required%29.user.js
+// @updateURL    https://update.greasyfork.org/scripts/517259/IXL%20Auto%20Answer%20%28OpenAI%20API%20Required%29.meta.js
 // ==/UserScript==
 
 (function() {
     'use strict';
 
-    // 从 localStorage 中加载 API key 和 API base（若没有则使用默认值）
+    // -------------------- 全局变量及初始设置 --------------------
     let API_KEY = localStorage.getItem("gpt4o-api-key") || "";
     let API_BASE = localStorage.getItem("gpt4o-api-base") || "https://api.openai.com/v1/chat/completions";
     let selectedModel = "gpt-4o";
@@ -32,7 +32,7 @@
         }
     }
 
-    // 模型介绍（注意：o3-mini 准确率不如 o1）
+    // 模型介绍
     const modelDescriptions = {
         "gpt-4o": "Can solve problems with images, cost-effective.",
         "gpt-4o-mini": "Handles text-only questions, cheapest option.",
@@ -56,11 +56,16 @@
             saveApiBase: "Save API Base",
             apiBasePlaceholder: "Enter your API base URL",
             statusWaiting: "Status: Waiting for input",
-            statusFetching: "Status: Retrieving HTML structure...",
-            statusSubmitting: "Status: Code executed",
-            progressText: "Processing...",
-            closeButton: "Close",
-            requestError: "Request error: "
+            analyzingHtml: "Analyzing HTML structure...",
+            extractingData: "Extracting question data...",
+            constructingApi: "Constructing API request...",
+            waitingGpt: "Waiting for GPT response...",
+            parsingResponse: "Parsing GPT response...",
+            executingCode: "Executing code...",
+            submissionComplete: "Submission complete.",
+            requestError: "Request error: ",
+            showLog: "Show Logs",
+            hideLog: "Hide Logs"
         },
         zh: {
             startAnswering: "开始答题",
@@ -76,21 +81,29 @@
             saveApiBase: "保存 API 基础地址",
             apiBasePlaceholder: "输入您的 API 基础地址",
             statusWaiting: "状态：等待输入",
-            statusFetching: "状态：获取 HTML 结构...",
-            statusSubmitting: "状态：代码已执行",
-            progressText: "处理中...",
-            closeButton: "关闭",
-            requestError: "请求错误："
+            analyzingHtml: "分析 HTML 结构...",
+            extractingData: "提取问题数据...",
+            constructingApi: "构造 API 请求...",
+            waitingGpt: "等待 GPT 响应...",
+            parsingResponse: "解析 GPT 响应...",
+            executingCode: "执行代码...",
+            submissionComplete: "完成提交。",
+            requestError: "请求错误：",
+            showLog: "显示日志",
+            hideLog: "隐藏日志"
         }
     };
 
-    // 创建控制面板
+    // -------------------- 创建控制面板 --------------------
     const panel = document.createElement('div');
     panel.id = "gpt4o-panel";
     panel.innerHTML = `
         <div id="gpt4o-header">
             <span>GPT Answer Assistant</span>
-            <button id="close-button">${langText[language].closeButton}</button>
+            <div>
+                <button id="toggle-log-btn">${langText[language].showLog}</button>
+                <button id="close-button">${langText[language].closeButton || "Close"}</button>
+            </div>
         </div>
         <div id="gpt4o-content">
             <button id="start-answering">${langText[language].startAnswering}</button>
@@ -142,18 +155,46 @@
             
             <div id="progress-container">
                 <progress id="progress-bar" max="100" value="0"></progress>
-                <span id="progress-text">${langText[language].progressText}</span>
+                <span id="progress-text">${langText[language].progressText || "Processing..."}</span>
             </div>
             
             <p id="status">${langText[language].statusWaiting}</p>
+            
+            <!-- 日志显示区域，默认隐藏 -->
+            <div id="log-container" style="display: none; max-height: 200px; overflow-y: auto; border: 1px solid #ccc; margin-top: 10px; padding: 5px; background-color: #f9f9f9;"></div>
         </div>
     `;
     document.body.appendChild(panel);
 
-    // 预填 API Base 输入框
-    document.getElementById('api-base-input').value = API_BASE;
+    // -------------------- 日志功能相关 --------------------
+    function logMessage(message) {
+        const logContainer = document.getElementById('log-container');
+        const timestamp = new Date().toLocaleString();
+        const logEntry = document.createElement('div');
+        logEntry.textContent = `[${timestamp}] ${message}`;
+        logContainer.appendChild(logEntry);
+        // 同时在控制台输出
+        console.log(`[Log] ${message}`);
+    }
 
-    // 使面板可拖拽
+    // 切换日志面板显示/隐藏
+    document.getElementById("toggle-log-btn").addEventListener("click", function() {
+        const logContainer = document.getElementById('log-container');
+        if (logContainer.style.display === "none") {
+            logContainer.style.display = "block";
+            this.textContent = langText[language].hideLog;
+        } else {
+            logContainer.style.display = "none";
+            this.textContent = langText[language].showLog;
+        }
+    });
+
+    // 捕获全局 JS 错误，并显示日志
+    window.onerror = function(message, source, lineno, colno, error) {
+        logMessage(`JS Error: ${message} at ${source}:${lineno}:${colno}`);
+    };
+
+    // -------------------- 使面板可拖拽 --------------------
     (function makeDraggable(element) {
         let posX = 0, posY = 0, initX = 0, initY = 0;
         const header = document.getElementById("gpt4o-header");
@@ -180,7 +221,7 @@
         }
     })(panel);
 
-    // 事件绑定
+    // -------------------- 事件绑定 --------------------
     document.getElementById("close-button").addEventListener("click", function() {
         panel.style.display = "none";
     });
@@ -235,7 +276,7 @@
     // 根据当前语言更新界面文本
     function updateLanguageText() {
         document.getElementById("start-answering").textContent = langText[language].startAnswering;
-        document.getElementById("close-button").textContent = langText[language].closeButton;
+        document.getElementById("close-button").textContent = langText[language].closeButton || "Close";
         document.getElementById("label-api-key").textContent = langText[language].setApiKey + ":";
         document.getElementById("api-key-input").placeholder = langText[language].apiKeyPlaceholder;
         document.getElementById("save-api-key").textContent = langText[language].saveApiKey;
@@ -244,35 +285,40 @@
         document.getElementById("save-api-base").textContent = langText[language].saveApiBase;
         document.getElementById("label-model-selection").textContent = langText[language].modelSelection + ":";
         document.getElementById("model-description").textContent = modelDescriptions[selectedModel];
-        document.getElementById("label-auto-answer").innerHTML = `<input type="checkbox" id="auto-answer-mode-toggle"> <span id="span-auto-answer">${langText[language].autoAnsweringMode}</span>`;
-        document.getElementById("label-auto-submit").innerHTML = `<input type="checkbox" id="auto-submit-toggle"> <span id="span-auto-submit">${langText[language].autoSubmit}</span>`;
         document.getElementById("label-language").textContent = langText[language].language + ":";
-        document.getElementById("progress-text").textContent = langText[language].progressText;
+        document.getElementById("progress-text").textContent = langText[language].progressText || "Processing...";
         document.getElementById("status").textContent = langText[language].statusWaiting;
+        // 更新日志按钮文本（根据日志区域是否显示）
+        const toggleBtn = document.getElementById("toggle-log-btn");
+        const logContainer = document.getElementById('log-container');
+        toggleBtn.textContent = logContainer.style.display === "none" ? langText[language].showLog : langText[language].hideLog;
     }
 
-    // 进度条相关操作
+    // -------------------- 进度条相关操作 --------------------
     const progressContainer = document.getElementById("progress-container");
     const progressBar = document.getElementById("progress-bar");
     let progressInterval = null;
 
-    // 更新进度到指定数值
     function updateProgress(value) {
         progressBar.value = value;
     }
 
-    // 请求时启动“假进度”，从当前进度（应为40%）缓慢增至95%
+    // 进度条模拟更新
     function startFakeProgress() {
         progressInterval = setInterval(() => {
-            if (progressBar.value < 95) {
-                updateProgress(progressBar.value + 3);  // 每次增加3%
+            let current = progressBar.value;
+            if (current < 90) {
+                let increment = (90 - current) * 0.05;
+                if (increment < 0.5) {
+                    increment = 0.5;
+                }
+                updateProgress(current + increment);
             } else {
                 clearInterval(progressInterval);
             }
-        }, 500);
+        }, 1000);
     }
 
-    // 请求结束后停止计时器，并将进度置为100%，稍后隐藏进度条
     function finishProgress() {
         clearInterval(progressInterval);
         updateProgress(100);
@@ -282,11 +328,11 @@
         }, 500);
     }
 
-    // 捕获目标 HTML 中的 canvas 元素（若存在）并转换为 base64 编码的 PNG 图像
+    // -------------------- Canvas 截图 --------------------
     function captureCanvasImage(htmlElement) {
         const canvas = htmlElement.querySelector('canvas');
         if (canvas) {
-            console.log("Detected canvas element, capturing image...");
+            logMessage("Detected canvas element, capturing image...");
             const offscreenCanvas = document.createElement('canvas');
             offscreenCanvas.width = canvas.width;
             offscreenCanvas.height = canvas.height;
@@ -297,7 +343,7 @@
         return null;
     }
 
-    // 向 GPT 发送 HTML 内容和可选的 canvas 数据，并执行返回的 JavaScript 代码
+    // -------------------- 向 GPT 发送请求及处理返回结果 --------------------
     function sendContentToGPT(htmlContent, canvasDataUrl) {
         const messages = [
             {
@@ -326,11 +372,9 @@
             messages: messages
         };
 
-        // 显示进度条（此时进度应为40%）
-        progressContainer.style.display = "block";
-        updateProgress(40);
+        updateProgress(15);
+        document.getElementById("status").textContent = langText[language].waitingGpt;
         startFakeProgress();
-        document.getElementById("status").textContent = langText[language].statusFetching;
 
         GM_xmlhttpRequest({
             method: "POST",
@@ -341,17 +385,23 @@
             },
             data: JSON.stringify(requestPayload),
             onload: function(response) {
-                // 请求成功时完成进度
                 if (response.status === 200) {
-                    finishProgress();
-                    document.getElementById("status").textContent = langText[language].statusSubmitting;
+                    clearInterval(progressInterval);
+                    updateProgress(95);
+                    document.getElementById("status").textContent = langText[language].parsingResponse;
                     let data = JSON.parse(response.responseText);
                     let code = sanitizeCode(data.choices[0].message.content.trim());
                     try {
+                        document.getElementById("status").textContent = langText[language].executingCode;
                         eval(code);
-                        if (autoSubmitEnabled) submitAnswer();
+                        if (autoSubmitEnabled) {
+                            submitAnswer();
+                            document.getElementById("status").textContent = langText[language].submissionComplete;
+                        }
+                        finishProgress();
                     } catch (error) {
                         document.getElementById("status").textContent = "Error during code execution.";
+                        logMessage(`Error during code execution: ${error}`);
                         console.error("Execution error: ", error);
                     }
                 } else {
@@ -359,6 +409,7 @@
                     updateProgress(0);
                     progressContainer.style.display = "none";
                     document.getElementById("status").textContent = langText[language].requestError + response.status;
+                    logMessage(`GPT request error, status code: ${response.status}`);
                     console.error("GPT request error, status code: " + response.status);
                 }
             },
@@ -367,66 +418,84 @@
                 updateProgress(0);
                 progressContainer.style.display = "none";
                 document.getElementById("status").textContent = langText[language].requestError + error;
+                logMessage(`Request error: ${error}`);
                 console.error("Request error: ", error);
             }
         });
     }
 
-    // 从 GPT 返回的文本中提取 JavaScript 代码
+    // 提取返回的 JavaScript 代码
     function sanitizeCode(responseContent) {
         const regex = /```javascript\s+([\s\S]*?)\s+```/i;
         const match = responseContent.match(regex);
         if (match && match[1]) {
             return match[1].trim();
         } else {
+            logMessage("Error: No JavaScript code found in response.");
             console.error("Error: No JavaScript code found in response.");
             return "";
         }
     }
 
-    // 模拟点击页面中的提交按钮提交答案
+    // 模拟点击提交按钮
     function submitAnswer() {
-        const submitButton = document.evaluate('/html/body/main/div/article/section/section/div/div[1]/section/div/section/div/button', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+        const submitButton = document.evaluate(
+            '/html/body/main/div/article/section/section/div/div[1]/section/div/section/div/button',
+            document,
+            null,
+            XPathResult.FIRST_ORDERED_NODE_TYPE,
+            null
+        ).singleNodeValue;
         if (submitButton) {
             submitButton.click();
+            logMessage("Answer submitted automatically.");
             console.log("Answer submitted automatically.");
         } else {
+            logMessage("Submit button not found.");
             console.log("Submit button not found.");
         }
     }
 
-    // 捕获当前问题页面的 HTML 结构及 canvas（若存在），并发送给 GPT 处理
+    // 捕获当前问题页面的 HTML 结构及 canvas，并发送给 GPT
     function answerQuestion() {
-        // 开始时显示进度条并置为初始值 10%
         progressContainer.style.display = "block";
-        updateProgress(10);
-        document.getElementById("status").textContent = langText[language].statusFetching;
+        updateProgress(5);
+        document.getElementById("status").textContent = langText[language].analyzingHtml;
         
-        let targetDiv = document.evaluate('/html/body/main/div/article/section/section/div/div[1]', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+        let targetDiv = document.evaluate(
+            '/html/body/main/div/article/section/section/div/div[1]', 
+            document, 
+            null, 
+            XPathResult.FIRST_ORDERED_NODE_TYPE, 
+            null
+        ).singleNodeValue;
+        
         if (!targetDiv) {
             updateProgress(0);
             progressContainer.style.display = "none";
             document.getElementById("status").textContent = "Error: HTML structure not found.";
+            logMessage("Error: HTML structure not found, check XPath.");
             console.error("Error: HTML structure not found, check XPath.");
             return;
         }
         
-        // HTML 提取完成，更新进度到 20%
-        updateProgress(20);
+        updateProgress(10);
+        document.getElementById("status").textContent = langText[language].extractingData;
         let htmlContent = targetDiv.outerHTML;
         
-        // 尝试提取 canvas 图片，提取完成后更新进度到 40%
-        const canvasDataUrl = captureCanvasImage(targetDiv);
-        updateProgress(40);
+        updateProgress(15);
+        document.getElementById("status").textContent = langText[language].constructingApi;
         
-        // 发起请求，进度将从 40% 渐增到 95%
+        const canvasDataUrl = captureCanvasImage(targetDiv);
+        
         sendContentToGPT(htmlContent, canvasDataUrl);
     }
 
-    // 当 auto-answer 模式启用时，监控页面中是否有新问题出现
+    // 监控新问题出现
     function monitorNewQuestions() {
         const observer = new MutationObserver(() => {
             if (autoAnswerModeEnabled) {
+                logMessage("New question detected, attempting to answer...");
                 console.log("New question detected, attempting to answer...");
                 answerQuestion();
             }
@@ -437,7 +506,7 @@
         }
     }
 
-    // 样式设置
+    // -------------------- 样式设置 --------------------
     GM_addStyle(`
         #gpt4o-panel {
             font-family: Arial, sans-serif;
@@ -470,6 +539,7 @@
             color: white;
             font-size: 14px;
             border-radius: 3px;
+            margin-left: 5px;
         }
         #gpt4o-content {
             padding: 10px;
