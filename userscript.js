@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         IXL Auto Answer (OpenAI API Required)
 // @namespace    http://tampermonkey.net/
-// @version      7.2-modified-with-logging
+// @version      7.3
 // @license      GPL-3.0
 // @description  Sends HTML and canvas data to AI models for math problem solving with enhanced accuracy, a configurable API base, an improved GUI with progress bar and auto-answer functionality. Added logging for JS errors and GPT request errors.
 // @match        https://*.ixl.com/*
@@ -63,7 +63,7 @@
             parsingResponse: "Parsing GPT response...",
             executingCode: "Executing code...",
             submissionComplete: "Submission complete.",
-            requestError: "Request error: ",
+            requestError: "Request error: "，
             showLog: "Show Logs",
             hideLog: "Hide Logs"
         },
