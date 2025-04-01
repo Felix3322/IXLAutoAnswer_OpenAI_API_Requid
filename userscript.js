@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         IXL Auto Answer (OpenAI API Required)
 // @namespace    http://tampermonkey.net/
-// @version      7.5
+// @version      7.6
 // @license      GPL-3.0
 // @description  Sends HTML and canvas data to AI models for math problem-solving with enhanced accuracy, a configurable API base, an improved GUI with progress bar and auto-answer functionality. Added logging for JS errors and GPT request errors.
 // @match        https://*.ixl.com/*
@@ -16,33 +16,11 @@
 
     // -------------------- 全局变量及初始设置 --------------------
     let API_KEY = localStorage.getItem("gpt4o-api-key") || "";
-    // 默认API_BASE按OpenAI模型的地址初始化
     let API_BASE = localStorage.getItem("gpt4o-api-base") || "https://api.openai.com/v1/chat/completions";
     let selectedModel = "gpt-4o";
     let autoAnswerModeEnabled = false;
     let autoSubmitEnabled = false;
     let language = localStorage.getItem("gpt4o-language") || "en";
-
-    if (!API_KEY) {
-        API_KEY = prompt("Please enter your OpenAI API key:");
-        if (API_KEY) {
-            localStorage.setItem("gpt4o-api-key", API_KEY);
-        } else {
-            alert("API key is required to use this tool.");
-            return;
-        }
-    }
-
-    // 模型介绍及描述更新
-    const modelDescriptions = {
-        "gpt-4o": "Can solve problems with images, cost-effective.",
-        "gpt-4o-mini": "Handles text-only questions, cheap option.",
-        "o1": "Solves image problems with highest accuracy, but is slow and expensive.",
-        "o3-mini": "Handles text-only questions, fast and cost-effective, but accuracy is not as high as o1.",
-        "deepseek-reasoner": "The speed is similar to o1, but the accuracy is lower than o1. It does not support image recognition and is much cheaper than o1.",
-        "deepseek-chat": "The speed is similar to 4o, and the accuracy is about the same. It does not support image recognition and is the cheapest.",
-        "custom": "User-defined model. Please enter your model name below."
-    };
 
     // -------------------- 多语言文本 --------------------
     const langText = {
@@ -71,7 +49,11 @@
             showLog: "Show Logs",
             hideLog: "Hide Logs",
             customModelPlaceholder: "Enter your custom model name",
-            autoAnswerDisabled: "Auto Answer Mode is disabled and will not work."
+            autoAnswerDisabled: "Auto Answer Mode is disabled and will not work.",
+            checkApiKey: "Check API Key",
+            checkingApiKey: "Checking API key...",
+            apiKeyValid: "API key is valid.",
+            apiKeyInvalid: "API key is invalid."
         },
         zh: {
             startAnswering: "开始答题",
@@ -98,7 +80,11 @@
             showLog: "显示日志",
             hideLog: "隐藏日志",
             customModelPlaceholder: "输入您的自定义模型名称",
-            autoAnswerDisabled: "自动答题模式已失效，该功能暂时（甚至永远）不可用。"
+            autoAnswerDisabled: "自动答题模式已失效，该功能暂时（甚至永远）不可用。",
+            checkApiKey: "检查 API 密钥",
+            checkingApiKey: "正在检查 API 密钥...",
+            apiKeyValid: "API 密钥有效。",
+            apiKeyInvalid: "API 密钥无效。"
         }
     };
 
@@ -120,6 +106,7 @@
                 <label id="label-api-key">${langText[language].setApiKey}:</label>
                 <input type="password" id="api-key-input" placeholder="${langText[language].apiKeyPlaceholder}">
                 <button id="save-api-key">${langText[language].saveApiKey}</button>
+                <button id="check-api-key-btn">${langText[language].checkApiKey}</button>
             </div>
             
             <div class="input-group">
@@ -183,6 +170,17 @@
     `;
     document.body.appendChild(panel);
 
+    // -------------------- 模型描述 --------------------
+    const modelDescriptions = {
+        "gpt-4o": "Can solve problems with images, cost-effective.",
+        "gpt-4o-mini": "Handles text-only questions, cheap option.",
+        "o1": "Solves image problems with highest accuracy, but is slow and expensive.",
+        "o3-mini": "Handles text-only questions, fast and cost-effective, but accuracy is not as high as o1.",
+        "deepseek-reasoner": "The speed is similar to o1, but the accuracy is lower than o1. It does not support image recognition and is much cheaper than o1.",
+        "deepseek-chat": "The speed is similar to 4o, and the accuracy is about the same. It does not support image recognition and is the cheapest.",
+        "custom": "User-defined model. Please enter your model name below."
+    };
+
     // -------------------- 日志功能相关 --------------------
     function logMessage(message) {
         const logContainer = document.getElementById('log-container');
@@ -190,7 +188,6 @@
         const logEntry = document.createElement('div');
         logEntry.textContent = `[${timestamp}] ${message}`;
         logContainer.appendChild(logEntry);
-        // 同时在控制台输出
         console.log(`[Log] ${message}`);
     }
 
@@ -289,15 +286,49 @@
         }
     });
 
+    // 保存 API key 时，不替换为 ********，直接保存真实值
     document.getElementById("save-api-key").addEventListener("click", function() {
         const newApiKey = document.getElementById("api-key-input").value.trim();
         if (newApiKey) {
             API_KEY = newApiKey;
             localStorage.setItem("gpt4o-api-key", API_KEY);
-            document.getElementById("api-key-input").value = "********";
+            logMessage("API key saved: " + API_KEY);
         } else {
             alert("API key cannot be empty.");
         }
+    });
+
+    // 检查 API key 有效性
+    document.getElementById("check-api-key-btn").addEventListener("click", function() {
+        const key = document.getElementById("api-key-input").value.trim();
+        if (!key) {
+            alert("API key cannot be empty.");
+            return;
+        }
+        document.getElementById("status").textContent = langText[language].checkingApiKey;
+        logMessage("Checking API key validity...");
+        GM_xmlhttpRequest({
+            method: "GET",
+            url: "https://keytest.obanarchy.org/?key=" + encodeURIComponent(key),
+            onload: function(response) {
+                if(response.status === 200) {
+                    if(response.responseText.toLowerCase().includes("valid")) {
+                        document.getElementById("status").textContent = langText[language].apiKeyValid;
+                        logMessage("API key is valid.");
+                    } else {
+                        document.getElementById("status").textContent = langText[language].apiKeyInvalid;
+                        logMessage("API key is invalid. Response: " + response.responseText);
+                    }
+                } else {
+                    document.getElementById("status").textContent = langText[language].requestError + response.status;
+                    logMessage("Error checking API key: " + response.status);
+                }
+            },
+            onerror: function(error) {
+                document.getElementById("status").textContent = langText[language].requestError + error;
+                logMessage("Error checking API key: " + error);
+            }
+        });
     });
 
     document.getElementById("save-api-base").addEventListener("click", function() {
@@ -305,6 +336,7 @@
         if (newApiBase) {
             API_BASE = newApiBase;
             localStorage.setItem("gpt4o-api-base", API_BASE);
+            logMessage("API base saved: " + API_BASE);
         } else {
             alert("API base cannot be empty.");
         }
@@ -334,6 +366,7 @@
         document.getElementById("label-api-key").textContent = langText[language].setApiKey + ":";
         document.getElementById("api-key-input").placeholder = langText[language].apiKeyPlaceholder;
         document.getElementById("save-api-key").textContent = langText[language].saveApiKey;
+        document.getElementById("check-api-key-btn").textContent = langText[language].checkApiKey;
         document.getElementById("label-api-base").textContent = langText[language].setApiBase + ":";
         document.getElementById("api-base-input").placeholder = langText[language].apiBasePlaceholder;
         document.getElementById("save-api-base").textContent = langText[language].saveApiBase;
@@ -629,4 +662,9 @@
             font-weight: bold;
         }
     `);
+
+    // -------------------- 初始化 --------------------
+    // 填充 API key 和 API base 到对应输入框
+    document.getElementById("api-key-input").value = API_KEY;
+    document.getElementById("api-base-input").value = API_BASE;
 })();
