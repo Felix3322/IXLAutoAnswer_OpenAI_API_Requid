@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         IXL Auto Answer (OpenAI API Required)
 // @namespace    http://tampermonkey.net/
-// @version      7.6
+// @version      7.7
 // @license      GPL-3.0
 // @description  Sends HTML and canvas data to AI models for math problem-solving with enhanced accuracy, a configurable API base, an improved GUI with progress bar and auto-answer functionality. Added logging for JS errors and GPT request errors.
 // @match        https://*.ixl.com/*
@@ -88,6 +88,17 @@
         }
     };
 
+    // -------------------- 模型描述 --------------------
+    const modelDescriptions = {
+        "gpt-4o": "Can solve problems with images, cost-effective.",
+        "gpt-4o-mini": "Handles text-only questions, cheap option.",
+        "o1": "Solves image problems with highest accuracy, but is slow and expensive.",
+        "o3-mini": "Handles text-only questions, fast and cost-effective, but accuracy is not as high as o1.",
+        "deepseek-reasoner": "The speed is similar to o1, but the accuracy is lower than o1. It does not support image recognition and is much cheaper than o1.",
+        "deepseek-chat": "The speed is similar to 4o, and the accuracy is about the same. It does not support image recognition and is the cheapest.",
+        "custom": "User-defined model. Please enter your model name below."
+    };
+
     // -------------------- 创建控制面板 --------------------
     const panel = document.createElement('div');
     panel.id = "gpt4o-panel";
@@ -169,17 +180,6 @@
         </div>
     `;
     document.body.appendChild(panel);
-
-    // -------------------- 模型描述 --------------------
-    const modelDescriptions = {
-        "gpt-4o": "Can solve problems with images, cost-effective.",
-        "gpt-4o-mini": "Handles text-only questions, cheap option.",
-        "o1": "Solves image problems with highest accuracy, but is slow and expensive.",
-        "o3-mini": "Handles text-only questions, fast and cost-effective, but accuracy is not as high as o1.",
-        "deepseek-reasoner": "The speed is similar to o1, but the accuracy is lower than o1. It does not support image recognition and is much cheaper than o1.",
-        "deepseek-chat": "The speed is similar to 4o, and the accuracy is about the same. It does not support image recognition and is the cheapest.",
-        "custom": "User-defined model. Please enter your model name below."
-    };
 
     // -------------------- 日志功能相关 --------------------
     function logMessage(message) {
