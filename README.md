@@ -8,6 +8,7 @@
 > **Ordinary users should install the script from [Greasy Fork](https://greasyfork.org/zh-CN/scripts/517259-ixl-auto-answer-openai-api-requid).***  
 
 ## **latest screenshot**
+
 ![image](https://github.com/user-attachments/assets/06015c69-e1c0-4a78-ad27-39943cfb946b)
 
 ---
