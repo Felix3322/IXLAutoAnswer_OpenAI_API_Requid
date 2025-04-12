@@ -3,7 +3,7 @@
 // @namespace    http://tampermonkey.net/
 // @version      8.0
 // @license      GPL-3.0
-// @description  Sends HTML and canvas data to AI models for math problem-solving with enhanced accuracy, configurable API base, improved GUI with progress bar, auto-answer functionality, token usage display, rollback and detailed DOM change logging.
+// @description  Sends HTML and canvas data to AI models for math problem-solving with enhanced accuracy, configurable API base, improved GUI with progress bar, auto-answer functionality, token usage display, rollback and detailed DOM change logging. API key is tested by direct server request.
 // @match        https://*.ixl.com/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
@@ -83,10 +83,10 @@
             hideLog: "Hide Logs",
             customModelPlaceholder: "Enter your custom model name",
             autoAnswerDisabled: "Auto Answer Mode is disabled and will not work.",
-            checkApiKey: "Check API Key",
-            checkingApiKey: "Checking API key...",
-            apiKeyValid: "API key is valid.",
-            apiKeyInvalid: "API key is invalid.",
+            checkApiKey: "Test API Key",
+            checkingApiKey: "Testing API key...",
+            apiKeyValid: "API key seems valid.",
+            apiKeyInvalid: "API key seems invalid.",
             progressText: "Processing...",
             tokenUsage: "Tokens: "
         },
@@ -117,10 +117,10 @@
             hideLog: "隐藏日志",
             customModelPlaceholder: "输入您的自定义模型名称",
             autoAnswerDisabled: "自动答题模式已失效，该功能暂时（甚至永远）不可用。",
-            checkApiKey: "检查 API 密钥",
-            checkingApiKey: "正在检查 API 密钥...",
-            apiKeyValid: "API 密钥有效。",
-            apiKeyInvalid: "API 密钥无效。",
+            checkApiKey: "测试 API 密钥",
+            checkingApiKey: "正在测试 API 密钥...",
+            apiKeyValid: "API 密钥看起来有效。",
+            apiKeyInvalid: "API 密钥看起来无效。",
             progressText: "处理中...",
             tokenUsage: "使用量: "
         }
@@ -134,10 +134,11 @@
         "o3-mini": "Handles text-only questions, fast and cost-effective, but accuracy is not as high as o1.",
         "deepseek-reasoner": "The speed is similar to o1, but the accuracy is lower than o1. It does not support image recognition and is much cheaper than o1.",
         "deepseek-chat": "The speed is similar to 4o, and the accuracy is about the same. It does not support image recognition and is the cheapest.",
+        "chatgpt-4o-least": "This model has a high ceiling but low floor—very unstable. It is the RLHF version of gpt4o, more human-like but prone to mistakes, hallucinations, and nonsense.",
         "custom": "User-defined model. Please enter your model name below."
     };
 
-    //-------------------- 创建控制面板 --------------------
+    //-------------------- 创建控制面板（尺寸加大） --------------------
     const panel = document.createElement('div');
     panel.id = "gpt4o-panel";
     panel.innerHTML = `
@@ -175,6 +176,7 @@
                     <option value="o3-mini">o3-mini</option>
                     <option value="deepseek-reasoner">deepseek-reasoner</option>
                     <option value="deepseek-chat">deepseek-chat</option>
+                    <option value="chatgpt-4o-least">chatgpt-4o-least</option>
                     <option value="custom">Custom</option>
                 </select>
                 <p id="model-description">${modelDescriptions[config.selectedModel]}</p>
@@ -216,7 +218,7 @@
             <p id="status">${langText[config.language].statusWaiting}</p>
             
             <!-- 日志显示区域，默认隐藏 -->
-            <div id="log-container" style="display: none; max-height: 200px; overflow-y: auto; border: 1px solid #ccc; margin-top: 10px; padding: 5px; background-color: #f9f9f9;"></div>
+            <div id="log-container" style="display: none; max-height: 250px; overflow-y: auto; border: 1px solid #ccc; margin-top: 10px; padding: 5px; background-color: #f9f9f9;"></div>
         </div>
     `;
     document.body.appendChild(panel);
@@ -309,38 +311,60 @@
         }
     });
 
-    // 检查 API key 有效性
+    // 测试 API key：直接请求 OpenAI 服务器接口，并弹出服务器返回结果
     document.getElementById("check-api-key-btn").addEventListener("click", function() {
-        const key = UI.apiKeyInput.value.trim();
-        if (!key) {
-            alert("API key cannot be empty.");
-            return;
-        }
         UI.status.textContent = langText[config.language].checkingApiKey;
-        logMessage("Checking API key validity...");
+        logMessage("Testing API key via server request...");
         GM_xmlhttpRequest({
             method: "GET",
-            url: "https://keytest.obanarchy.org/?key=" + encodeURIComponent(key),
+            url: "https://api.openai.com/v1/models",
+            headers: {
+                "Authorization": `Bearer ${config.apiKey}`
+            },
             onload: function(response) {
-                if(response.status === 200) {
-                    if(response.responseText.toLowerCase().includes("valid")) {
-                        UI.status.textContent = langText[config.language].apiKeyValid;
-                        logMessage("API key is valid.");
-                    } else {
-                        UI.status.textContent = langText[config.language].apiKeyInvalid;
-                        logMessage("API key is invalid. Response: " + response.responseText);
-                    }
-                } else {
-                    UI.status.textContent = langText[config.language].requestError + response.status;
-                    logMessage("Error checking API key: " + response.status);
-                }
+                logDump("API Key Test Response", response.responseText);
+                showTestResult(response.responseText);
+                UI.status.textContent = langText[config.language].statusWaiting;
             },
             onerror: function(error) {
-                UI.status.textContent = langText[config.language].requestError + error;
-                logMessage("Error checking API key: " + error);
+                logDump("API Key Test Error", error);
+                showTestResult("Error testing API key: " + JSON.stringify(error));
+                UI.status.textContent = langText[config.language].statusWaiting;
             }
         });
     });
+
+    // 弹出一个可关闭的测试结果文本框
+    function showTestResult(message) {
+        const overlay = document.createElement("div");
+        overlay.id = "test-result-overlay";
+        overlay.style.position = "fixed";
+        overlay.style.top = "0";
+        overlay.style.left = "0";
+        overlay.style.width = "100%";
+        overlay.style.height = "100%";
+        overlay.style.backgroundColor = "rgba(0,0,0,0.5)";
+        overlay.style.zIndex = "20000";
+        const box = document.createElement("div");
+        box.style.position = "absolute";
+        box.style.top = "50%";
+        box.style.left = "50%";
+        box.style.transform = "translate(-50%, -50%)";
+        box.style.backgroundColor = "#fff";
+        box.style.padding = "20px";
+        box.style.borderRadius = "5px";
+        box.style.width = "400px";
+        box.style.maxHeight = "80%";
+        box.style.overflowY = "auto";
+        box.style.textAlign = "left";
+        box.innerHTML = `<pre style="white-space: pre-wrap;">${message}</pre><button id="close-test-result">Close</button>`;
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+        document.getElementById("close-test-result").addEventListener("click", function() {
+            document.body.removeChild(overlay);
+        });
+        logDump("Test API Key Result", message);
+    }
 
     // 保存 API Base
     document.getElementById("save-api-base").addEventListener("click", function() {
@@ -380,7 +404,6 @@
     // 撤回上一次答案
     document.getElementById("rollback-answer").addEventListener("click", function() {
         if (config.lastTargetState) {
-            // 尝试恢复上一次记录的 DOM 状态
             let targetDiv = getTargetDiv();
             if (targetDiv) {
                 targetDiv.innerHTML = config.lastTargetState;
@@ -410,12 +433,9 @@
         document.getElementById("label-language").textContent = langText[config.language].language + ":";
         document.getElementById("progress-text").textContent = langText[config.language].progressText || "Processing...";
         UI.status.textContent = langText[config.language].statusWaiting;
-        // 更新日志按钮文本（根据日志区域是否显示）
         const toggleBtn = document.getElementById("toggle-log-btn");
         toggleBtn.textContent = (UI.logContainer.style.display === "none") ? langText[config.language].showLog : langText[config.language].hideLog;
-        // 更新自定义模型输入框提示
         document.getElementById("custom-model-input").placeholder = langText[config.language].customModelPlaceholder;
-        // 更新 Token 使用显示
         UI.tokenUsageDisplay.textContent = langText[config.language].tokenUsage + config.tokenUsage;
     }
 
@@ -448,7 +468,7 @@
     }
 
     //-------------------- 数学公式和 Canvas 截图 --------------------
-    // 如果存在数学公式（如 MathJax 渲染），优先抓取 LaTeX 内容
+    // 优先抓取数学公式 LaTeX 内容（例如 MathJax 渲染的公式）
     function captureMathContent(htmlElement) {
         let mathElements = htmlElement.querySelectorAll('script[type="math/tex"], .MathJax, .mjx-chtml');
         if (mathElements.length > 0) {
@@ -489,14 +509,15 @@
 
     //-------------------- GPT 请求及自动重试 --------------------
     function sendContentToGPT(htmlContent, canvasDataUrl, latexContent) {
+        // 更新 GPT 提示词：要求返回的代码必须严格修改 DOM 填空，且只返回纯代码，并返回最稳定的选择器（例如 XPath）。
         const messages = [
             {
                 "role": "system",
-                "content": "You are a math assistant. Carefully analyze the provided HTML structure and, if available, either the extracted LaTeX content or canvas image to generate executable JavaScript code that fills in all required answer fields accurately. Use stable selectors such as XPath. Think step by step before answering."
+                "content": "You are a math assistant specialized in solving IXL math problems. Analyze the provided HTML structure and, if available, the extracted LaTeX content (preferred) or the canvas image. Your goal is to generate a complete, executable JavaScript code snippet that fills in all required answer fields on the page. Your code must use robust and precise selectors (for example, XPath) as the most stable selectors and simulate necessary clicks. DO NOT leave any required field empty. Return ONLY code wrapped in triple backticks with language identifier (```javascript ... ```), and nothing else."
             },
             {
                 "role": "user",
-                "content": `This is a math question. Use the following HTML structure to generate JavaScript code that fills each answer field without leaving any fields empty.\n\nHTML Structure:\n${htmlContent}`
+                "content": `This is a math question. Use the following HTML structure to generate JavaScript code that completely fills each answer field.\n\nHTML Structure:\n${htmlContent}`
             }
         ];
         if (latexContent) {
@@ -524,7 +545,7 @@
         UI.status.textContent = langText[config.language].waitingGpt;
         startFakeProgress();
 
-        // 定义发送请求的内部函数，带重试机制
+        // 内部请求函数：自动重试机制
         function attemptSend(retry) {
             GM_xmlhttpRequest({
                 method: "POST",
@@ -542,7 +563,6 @@
                         UI.status.textContent = langText[config.language].parsingResponse;
                         try {
                             let data = JSON.parse(response.responseText);
-                            // 若响应中包含 token 使用量，则更新 UI 和 config
                             if (data.usage && data.usage.total_tokens) {
                                 config.tokenUsage = data.usage.total_tokens;
                                 UI.tokenUsageDisplay.textContent = langText[config.language].tokenUsage + config.tokenUsage;
@@ -551,7 +571,6 @@
                             let code = sanitizeCode(data.choices[0].message.content.trim());
                             logDump("Cleaned JavaScript Code", code);
                             UI.status.textContent = langText[config.language].executingCode;
-                            // 在执行前 dump 并在沙箱中执行代码
                             logDump("Evaluated Code", code);
                             executeInSandbox(code);
                             if (config.autoSubmitEnabled) {
@@ -611,7 +630,6 @@
 
     //-------------------- 模拟点击提交按钮 --------------------
     function submitAnswer() {
-        // 尝试通过 XPath 获取提交按钮，如果失败则使用备用选择器
         let submitButton = document.evaluate(
             '/html/body/main/div/article/section/section/div/div[1]/section/div/section/div/button',
             document,
@@ -620,7 +638,7 @@
             null
         ).singleNodeValue;
         if (!submitButton) {
-            logMessage("Primary XPath failed, trying backup selector...");
+            logMessage("Primary XPath for submit button failed, trying backup selector...");
             submitButton = document.querySelector('button.submit, button[class*="submit"]');
         }
         if (submitButton) {
@@ -706,18 +724,19 @@
         #gpt4o-panel {
             font-family: Arial, sans-serif;
             font-size: 14px;
-            width: 350px;
-            background-color: rgba(255, 255, 255, 0.95);
+            width: 500px;
+            background-color: rgba(255, 255, 255, 0.98);
             border-radius: 5px;
             position: fixed;
             top: 10px;
             right: 10px;
             z-index: 10000;
-            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.3);
+            box-shadow: 0px 0px 15px rgba(0, 0, 0, 0.4);
+            padding-bottom: 10px;
         }
         #gpt4o-header {
             cursor: move;
-            padding: 5px 10px;
+            padding: 10px 15px;
             background-color: #4CAF50;
             color: white;
             display: flex;
@@ -729,7 +748,7 @@
         #gpt4o-header button {
             background-color: #d9534f;
             border: none;
-            padding: 2px 6px;
+            padding: 4px 8px;
             cursor: pointer;
             color: white;
             font-size: 14px;
@@ -741,7 +760,7 @@
             font-weight: bold;
         }
         #gpt4o-content {
-            padding: 10px;
+            padding: 15px;
         }
         .input-group {
             margin-top: 10px;
@@ -752,13 +771,13 @@
         }
         .input-group input, .input-group select {
             width: 100%;
-            padding: 5px;
+            padding: 6px;
             box-sizing: border-box;
         }
         .input-group button {
             margin-top: 5px;
             width: 100%;
-            padding: 5px;
+            padding: 6px;
             background-color: #5bc0de;
             border: none;
             color: white;
@@ -774,11 +793,15 @@
         }
         #progress-bar {
             width: 100%;
-            height: 10px;
+            height: 12px;
         }
         #status {
             margin-top: 10px;
             font-weight: bold;
+        }
+        /* 测试结果弹出框样式 */
+        #test-result-overlay {
+            font-family: Arial, sans-serif;
         }
     `);
 
