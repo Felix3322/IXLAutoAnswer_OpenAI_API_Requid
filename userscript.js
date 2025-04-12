@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         IXL Auto Answer (OpenAI API Required)
 // @namespace    http://tampermonkey.net/
-// @version      7.7-modified
+// @version      8.0
 // @license      GPL-3.0
-// @description  Sends HTML and canvas data to AI models for math problem-solving with enhanced accuracy, a configurable API base, an improved GUI with progress bar and auto-answer functionality. Added logging for JS errors and GPT request errors. Now logs all dynamic changes and dumps all variable data.
+// @description  Sends HTML and canvas data to AI models for math problem-solving with enhanced accuracy, configurable API base, improved GUI with progress bar, auto-answer functionality, token usage display, rollback and detailed DOM change logging.
 // @match        https://*.ixl.com/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
@@ -14,35 +14,53 @@
 (function() {
     'use strict';
 
-    // -------------------- 全局变量及初始设置 --------------------
-    let API_KEY = localStorage.getItem("gpt4o-api-key") || "";
-    let API_BASE = localStorage.getItem("gpt4o-api-base") || "https://api.openai.com/v1/chat/completions";
-    let selectedModel = "gpt-4o";
-    let autoAnswerModeEnabled = false;
-    let autoSubmitEnabled = false;
-    let language = localStorage.getItem("gpt4o-language") || "en";
+    //-------------------- 全局状态配置（封装为对象） --------------------
+    const config = {
+        apiKey: localStorage.getItem("gpt4o-api-key") || "",
+        apiBase: localStorage.getItem("gpt4o-api-base") || "https://api.openai.com/v1/chat/completions",
+        selectedModel: "gpt-4o",
+        autoAnswerModeEnabled: false,
+        autoSubmitEnabled: false,
+        language: localStorage.getItem("gpt4o-language") || "en",
+        tokenUsage: 0,
+        lastTargetState: null,  // 用于回滚
+        retryCount: 0,
+        maxRetry: 2
+    };
 
-    // -------------------- 日志工具函数 --------------------
+    //-------------------- UI 元素缓存对象 --------------------
+    const UI = {};
+
+    //-------------------- 日志工具函数 --------------------
     function logMessage(message) {
-        const logContainer = document.getElementById('log-container');
         const timestamp = new Date().toLocaleString();
+        const logContainer = UI.logContainer;
         const logEntry = document.createElement('div');
         logEntry.textContent = `[Log] ${timestamp} ${message}`;
         logContainer.appendChild(logEntry);
         console.log(`[Log] ${message}`);
     }
-
     function logDump(label, value) {
-        let dumpMessage = `[DUMP] ${label}: ` + (typeof value === "object" ? JSON.stringify(value) : value);
+        let dumpMessage = `[DUMP] ${label}: `;
+        if (typeof value === "object") {
+            try {
+                dumpMessage += JSON.stringify(value);
+            } catch (e) {
+                dumpMessage += value;
+            }
+        } else {
+            dumpMessage += value;
+        }
         logMessage(dumpMessage);
     }
 
-    // -------------------- 多语言文本 --------------------
+    //-------------------- 多语言文本 --------------------
     const langText = {
         en: {
             startAnswering: "Start Answering",
             autoAnsweringMode: "Enable Auto Answer Mode",
             autoSubmit: "Enable Auto Submit",
+            rollback: "Rollback Last Answer",
             language: "Language",
             modelSelection: "Select Model",
             modelDescription: "Model Description",
@@ -69,12 +87,14 @@
             checkingApiKey: "Checking API key...",
             apiKeyValid: "API key is valid.",
             apiKeyInvalid: "API key is invalid.",
-            progressText: "Processing..."
+            progressText: "Processing...",
+            tokenUsage: "Tokens: "
         },
         zh: {
             startAnswering: "开始答题",
             autoAnsweringMode: "启用自动答题模式",
             autoSubmit: "启用自动提交",
+            rollback: "撤回上一次",
             language: "语言",
             modelSelection: "选择模型",
             modelDescription: "模型介绍",
@@ -101,11 +121,12 @@
             checkingApiKey: "正在检查 API 密钥...",
             apiKeyValid: "API 密钥有效。",
             apiKeyInvalid: "API 密钥无效。",
-            progressText: "处理中..."
+            progressText: "处理中...",
+            tokenUsage: "使用量: "
         }
     };
 
-    // -------------------- 模型描述 --------------------
+    //-------------------- 模型描述 --------------------
     const modelDescriptions = {
         "gpt-4o": "Can solve problems with images, cost-effective.",
         "gpt-4o-mini": "Handles text-only questions, cheap option.",
@@ -116,35 +137,37 @@
         "custom": "User-defined model. Please enter your model name below."
     };
 
-    // -------------------- 创建控制面板 --------------------
+    //-------------------- 创建控制面板 --------------------
     const panel = document.createElement('div');
     panel.id = "gpt4o-panel";
     panel.innerHTML = `
         <div id="gpt4o-header">
             <span>GPT Answer Assistant</span>
             <div>
-                <button id="toggle-log-btn">${langText[language].showLog}</button>
-                <button id="close-button">${langText[language].closeButton || "Close"}</button>
+                <span id="token-usage-display">${langText[config.language].tokenUsage}0</span>
+                <button id="toggle-log-btn">${langText[config.language].showLog}</button>
+                <button id="close-button">${langText[config.language].closeButton || "Close"}</button>
             </div>
         </div>
         <div id="gpt4o-content">
-            <button id="start-answering">${langText[language].startAnswering}</button>
+            <button id="start-answering">${langText[config.language].startAnswering}</button>
+            <button id="rollback-answer">${langText[config.language].rollback}</button>
             
             <div class="input-group">
-                <label id="label-api-key">${langText[language].setApiKey}:</label>
-                <input type="password" id="api-key-input" placeholder="${langText[language].apiKeyPlaceholder}">
-                <button id="save-api-key">${langText[language].saveApiKey}</button>
-                <button id="check-api-key-btn">${langText[language].checkApiKey}</button>
+                <label id="label-api-key">${langText[config.language].setApiKey}:</label>
+                <input type="password" id="api-key-input" placeholder="${langText[config.language].apiKeyPlaceholder}">
+                <button id="save-api-key">${langText[config.language].saveApiKey}</button>
+                <button id="check-api-key-btn">${langText[config.language].checkApiKey}</button>
             </div>
             
             <div class="input-group">
-                <label id="label-api-base">${langText[language].setApiBase}:</label>
-                <input type="text" id="api-base-input" placeholder="${langText[language].apiBasePlaceholder}">
-                <button id="save-api-base">${langText[language].saveApiBase}</button>
+                <label id="label-api-base">${langText[config.language].setApiBase}:</label>
+                <input type="text" id="api-base-input" placeholder="${langText[config.language].apiBasePlaceholder}">
+                <button id="save-api-base">${langText[config.language].saveApiBase}</button>
             </div>
             
             <div class="input-group">
-                <label id="label-model-selection">${langText[language].modelSelection}:</label>
+                <label id="label-model-selection">${langText[config.language].modelSelection}:</label>
                 <select id="model-select">
                     <option value="gpt-4o">GPT-4o</option>
                     <option value="gpt-4o-mini">GPT-4o-mini</option>
@@ -154,43 +177,43 @@
                     <option value="deepseek-chat">deepseek-chat</option>
                     <option value="custom">Custom</option>
                 </select>
-                <p id="model-description">${modelDescriptions[selectedModel]}</p>
+                <p id="model-description">${modelDescriptions[config.selectedModel]}</p>
             </div>
             
             <!-- 自定义模型输入框，默认隐藏 -->
             <div class="input-group" id="custom-model-group" style="display: none;">
-                <label id="label-custom-model">${langText[language].modelSelection} (Custom):</label>
-                <input type="text" id="custom-model-input" placeholder="${langText[language].customModelPlaceholder}">
+                <label id="label-custom-model">${langText[config.language].modelSelection} (Custom):</label>
+                <input type="text" id="custom-model-input" placeholder="${langText[config.language].customModelPlaceholder}">
             </div>
             
             <div class="input-group">
                 <label id="label-auto-answer">
                     <input type="checkbox" id="auto-answer-mode-toggle">
-                    <span id="span-auto-answer">${langText[language].autoAnsweringMode}</span>
+                    <span id="span-auto-answer">${langText[config.language].autoAnsweringMode}</span>
                 </label>
             </div>
             
             <div class="input-group">
                 <label id="label-auto-submit">
                     <input type="checkbox" id="auto-submit-toggle">
-                    <span id="span-auto-submit">${langText[language].autoSubmit}</span>
+                    <span id="span-auto-submit">${langText[config.language].autoSubmit}</span>
                 </label>
             </div>
             
             <div class="input-group">
-                <label id="label-language">${langText[language].language}:</label>
+                <label id="label-language">${langText[config.language].language}:</label>
                 <select id="language-select">
-                    <option value="en" ${language === "en" ? "selected" : ""}>English</option>
-                    <option value="zh" ${language === "zh" ? "selected" : ""}>中文</option>
+                    <option value="en" ${config.language === "en" ? "selected" : ""}>English</option>
+                    <option value="zh" ${config.language === "zh" ? "selected" : ""}>中文</option>
                 </select>
             </div>
             
             <div id="progress-container">
                 <progress id="progress-bar" max="100" value="0"></progress>
-                <span id="progress-text">${langText[language].progressText || "Processing..."}</span>
+                <span id="progress-text">${langText[config.language].progressText || "Processing..."}</span>
             </div>
             
-            <p id="status">${langText[language].statusWaiting}</p>
+            <p id="status">${langText[config.language].statusWaiting}</p>
             
             <!-- 日志显示区域，默认隐藏 -->
             <div id="log-container" style="display: none; max-height: 200px; overflow-y: auto; border: 1px solid #ccc; margin-top: 10px; padding: 5px; background-color: #f9f9f9;"></div>
@@ -198,118 +221,89 @@
     `;
     document.body.appendChild(panel);
 
-    // -------------------- 日志功能相关 --------------------
-    // 日志函数 logMessage 和 logDump 已定义在顶部
+    // 缓存 UI 元素
+    UI.panel = document.getElementById("gpt4o-panel");
+    UI.header = document.getElementById("gpt4o-header");
+    UI.logContainer = document.getElementById("log-container");
+    UI.apiKeyInput = document.getElementById("api-key-input");
+    UI.apiBaseInput = document.getElementById("api-base-input");
+    UI.status = document.getElementById("status");
+    UI.tokenUsageDisplay = document.getElementById("token-usage-display");
 
+    //-------------------- 事件绑定 --------------------
     // 切换日志面板显示/隐藏
     document.getElementById("toggle-log-btn").addEventListener("click", function() {
-        const logContainer = document.getElementById('log-container');
-        if (logContainer.style.display === "none") {
-            logContainer.style.display = "block";
-            this.textContent = langText[language].hideLog;
+        if (UI.logContainer.style.display === "none") {
+            UI.logContainer.style.display = "block";
+            this.textContent = langText[config.language].hideLog;
             logMessage("Log panel shown.");
         } else {
-            logContainer.style.display = "none";
-            this.textContent = langText[language].showLog;
+            UI.logContainer.style.display = "none";
+            this.textContent = langText[config.language].showLog;
             logMessage("Log panel hidden.");
         }
     });
 
-    // 捕获全局 JS 错误，并显示日志
-    window.onerror = function(message, source, lineno, colno, error) {
-        logMessage(`JS Error: ${message} at ${source}:${lineno}:${colno}`);
-    };
-
-    // -------------------- 使面板可拖拽 --------------------
-    (function makeDraggable(element) {
-        let posX = 0, posY = 0, initX = 0, initY = 0;
-        const header = document.getElementById("gpt4o-header");
-        header.style.cursor = "move";
-        header.addEventListener('mousedown', function(e) {
-            e.preventDefault();
-            initX = e.clientX;
-            initY = e.clientY;
-            document.addEventListener('mousemove', drag);
-            document.addEventListener('mouseup', closeDrag);
-        });
-        function drag(e) {
-            e.preventDefault();
-            posX = initX - e.clientX;
-            posY = initY - e.clientY;
-            initX = e.clientX;
-            initY = e.clientY;
-            element.style.top = (element.offsetTop - posY) + "px";
-            element.style.left = (element.offsetLeft - posX) + "px";
-        }
-        function closeDrag() {
-            document.removeEventListener('mousemove', drag);
-            document.removeEventListener('mouseup', closeDrag);
-        }
-    })(panel);
-
-    // -------------------- 事件绑定 --------------------
+    // 面板关闭
     document.getElementById("close-button").addEventListener("click", function() {
-        panel.style.display = "none";
+        UI.panel.style.display = "none";
         logMessage("Panel closed by user.");
     });
 
+    // 语言切换
     document.getElementById("language-select").addEventListener("change", function() {
-        language = this.value;
-        localStorage.setItem("gpt4o-language", language);
+        config.language = this.value;
+        localStorage.setItem("gpt4o-language", config.language);
         updateLanguageText();
-        logDump("Language Changed", language);
+        logDump("Language Changed", config.language);
     });
 
-    // 模型选择变更时处理：更新描述、检查是否为deepseek系列或自定义模型，并自动配置API_BASE
+    // 模型选择与 API Base 自动切换
     document.getElementById("model-select").addEventListener("change", function() {
-        selectedModel = this.value;
-        document.getElementById("model-description").textContent = modelDescriptions[selectedModel];
-        logDump("Model Selected", selectedModel);
-
-        // 控制自定义模型输入框显示
+        config.selectedModel = this.value;
+        document.getElementById("model-description").textContent = modelDescriptions[config.selectedModel];
+        logDump("Model Selected", config.selectedModel);
+        // 显示或隐藏自定义模型输入
         const customModelGroup = document.getElementById("custom-model-group");
-        if (selectedModel === "custom") {
+        if (config.selectedModel === "custom") {
             customModelGroup.style.display = "block";
         } else {
             customModelGroup.style.display = "none";
         }
-
-        // 自动配置API_BASE
-        const apiBaseInput = document.getElementById("api-base-input");
-        if (selectedModel === "deepseek-reasoner" || selectedModel === "deepseek-chat") {
-            API_BASE = "https://api.deepseek.com/v1/chat/completions";
+        // 自动配置 API Base
+        if (config.selectedModel === "deepseek-reasoner" || config.selectedModel === "deepseek-chat") {
+            config.apiBase = "https://api.deepseek.com/v1/chat/completions";
         } else {
-            API_BASE = "https://api.openai.com/v1/chat/completions";
+            config.apiBase = "https://api.openai.com/v1/chat/completions";
         }
-        localStorage.setItem("gpt4o-api-base", API_BASE);
-        apiBaseInput.value = API_BASE;
-        logDump("API Base Updated", API_BASE);
-
-        // 高光闪烁效果：临时改变背景色后恢复
-        const originalBg = apiBaseInput.style.backgroundColor;
-        apiBaseInput.style.backgroundColor = "#ffff99";
+        localStorage.setItem("gpt4o-api-base", config.apiBase);
+        UI.apiBaseInput.value = config.apiBase;
+        logDump("API Base Updated", config.apiBase);
+        // 高光闪烁效果
+        const originalBg = UI.apiBaseInput.style.backgroundColor;
+        UI.apiBaseInput.style.backgroundColor = "#ffff99";
         setTimeout(() => {
-            apiBaseInput.style.backgroundColor = originalBg;
+            UI.apiBaseInput.style.backgroundColor = originalBg;
         }, 500);
     });
 
-    // 当用户在自定义模型输入框输入后，将值赋给selectedModel
+    // 自定义模型输入
     document.getElementById("custom-model-input").addEventListener("change", function() {
         const customModel = this.value.trim();
         if (customModel) {
-            selectedModel = customModel;
+            config.selectedModel = customModel;
             document.getElementById("model-description").textContent = "User-defined custom model: " + customModel;
             logDump("Custom Model Selected", customModel);
         }
     });
 
-    // 保存 API key 时，不替换为 ********，直接保存真实值
+    // 保存 API key
     document.getElementById("save-api-key").addEventListener("click", function() {
-        const newApiKey = document.getElementById("api-key-input").value.trim();
+        const newApiKey = UI.apiKeyInput.value.trim();
         if (newApiKey) {
-            API_KEY = newApiKey;
-            localStorage.setItem("gpt4o-api-key", API_KEY);
-            logDump("API Key Saved", API_KEY);
+            config.apiKey = newApiKey;
+            localStorage.setItem("gpt4o-api-key", config.apiKey);
+            logDump("API Key Saved", config.apiKey);
         } else {
             alert("API key cannot be empty.");
         }
@@ -317,12 +311,12 @@
 
     // 检查 API key 有效性
     document.getElementById("check-api-key-btn").addEventListener("click", function() {
-        const key = document.getElementById("api-key-input").value.trim();
+        const key = UI.apiKeyInput.value.trim();
         if (!key) {
             alert("API key cannot be empty.");
             return;
         }
-        document.getElementById("status").textContent = langText[language].checkingApiKey;
+        UI.status.textContent = langText[config.language].checkingApiKey;
         logMessage("Checking API key validity...");
         GM_xmlhttpRequest({
             method: "GET",
@@ -330,105 +324,120 @@
             onload: function(response) {
                 if(response.status === 200) {
                     if(response.responseText.toLowerCase().includes("valid")) {
-                        document.getElementById("status").textContent = langText[language].apiKeyValid;
+                        UI.status.textContent = langText[config.language].apiKeyValid;
                         logMessage("API key is valid.");
                     } else {
-                        document.getElementById("status").textContent = langText[language].apiKeyInvalid;
+                        UI.status.textContent = langText[config.language].apiKeyInvalid;
                         logMessage("API key is invalid. Response: " + response.responseText);
                     }
                 } else {
-                    document.getElementById("status").textContent = langText[language].requestError + response.status;
+                    UI.status.textContent = langText[config.language].requestError + response.status;
                     logMessage("Error checking API key: " + response.status);
                 }
             },
             onerror: function(error) {
-                document.getElementById("status").textContent = langText[language].requestError + error;
+                UI.status.textContent = langText[config.language].requestError + error;
                 logMessage("Error checking API key: " + error);
             }
         });
     });
 
+    // 保存 API Base
     document.getElementById("save-api-base").addEventListener("click", function() {
-        const newApiBase = document.getElementById("api-base-input").value.trim();
+        const newApiBase = UI.apiBaseInput.value.trim();
         if (newApiBase) {
-            API_BASE = newApiBase;
-            localStorage.setItem("gpt4o-api-base", API_BASE);
-            logDump("API Base Saved", API_BASE);
+            config.apiBase = newApiBase;
+            localStorage.setItem("gpt4o-api-base", config.apiBase);
+            logDump("API Base Saved", config.apiBase);
         } else {
             alert("API base cannot be empty.");
         }
     });
 
-    // 修改 Auto Answer Mode 事件处理，提示功能不可用，并取消勾选
+    // 修改 Auto Answer Mode（不可用时直接回滚）
     document.getElementById("auto-answer-mode-toggle").addEventListener("change", function() {
         logDump("Auto Answer Mode Toggle", this.checked);
         if (this.checked) {
-            alert(langText[language].autoAnswerDisabled);
+            alert(langText[config.language].autoAnswerDisabled);
             this.checked = false;
-            autoAnswerModeEnabled = false;
+            config.autoAnswerModeEnabled = false;
             logMessage("Auto Answer Mode attempted to enable, but remains disabled.");
         }
     });
 
+    // Auto Submit 切换
     document.getElementById("auto-submit-toggle").addEventListener("change", function() {
-        autoSubmitEnabled = this.checked;
-        logDump("Auto Submit Toggle", autoSubmitEnabled);
+        config.autoSubmitEnabled = this.checked;
+        logDump("Auto Submit Toggle", config.autoSubmitEnabled);
     });
 
+    // 开始答题
     document.getElementById("start-answering").addEventListener("click", function() {
         logMessage("Start Answering button clicked.");
         answerQuestion();
     });
 
+    // 撤回上一次答案
+    document.getElementById("rollback-answer").addEventListener("click", function() {
+        if (config.lastTargetState) {
+            // 尝试恢复上一次记录的 DOM 状态
+            let targetDiv = getTargetDiv();
+            if (targetDiv) {
+                targetDiv.innerHTML = config.lastTargetState;
+                logMessage("Rolled back to previous state.");
+            } else {
+                logMessage("Rollback failed: target element not found.");
+            }
+        } else {
+            logMessage("No previous state available for rollback.");
+        }
+    });
+
     // 根据当前语言更新界面文本
     function updateLanguageText() {
-        document.getElementById("start-answering").textContent = langText[language].startAnswering;
-        document.getElementById("close-button").textContent = langText[language].closeButton || "Close";
-        document.getElementById("label-api-key").textContent = langText[language].setApiKey + ":";
-        document.getElementById("api-key-input").placeholder = langText[language].apiKeyPlaceholder;
-        document.getElementById("save-api-key").textContent = langText[language].saveApiKey;
-        document.getElementById("check-api-key-btn").textContent = langText[language].checkApiKey;
-        document.getElementById("label-api-base").textContent = langText[language].setApiBase + ":";
-        document.getElementById("api-base-input").placeholder = langText[language].apiBasePlaceholder;
-        document.getElementById("save-api-base").textContent = langText[language].saveApiBase;
-        document.getElementById("label-model-selection").textContent = langText[language].modelSelection + ":";
-        document.getElementById("model-description").textContent = modelDescriptions[selectedModel] || "User-defined custom model";
-        document.getElementById("label-language").textContent = langText[language].language + ":";
-        document.getElementById("progress-text").textContent = langText[language].progressText || "Processing...";
-        document.getElementById("status").textContent = langText[language].statusWaiting;
+        document.getElementById("start-answering").textContent = langText[config.language].startAnswering;
+        document.getElementById("rollback-answer").textContent = langText[config.language].rollback;
+        document.getElementById("close-button").textContent = langText[config.language].closeButton || "Close";
+        document.getElementById("label-api-key").textContent = langText[config.language].setApiKey + ":";
+        UI.apiKeyInput.placeholder = langText[config.language].apiKeyPlaceholder;
+        document.getElementById("save-api-key").textContent = langText[config.language].saveApiKey;
+        document.getElementById("check-api-key-btn").textContent = langText[config.language].checkApiKey;
+        document.getElementById("label-api-base").textContent = langText[config.language].setApiBase + ":";
+        UI.apiBaseInput.placeholder = langText[config.language].apiBasePlaceholder;
+        document.getElementById("save-api-base").textContent = langText[config.language].saveApiBase;
+        document.getElementById("label-model-selection").textContent = langText[config.language].modelSelection + ":";
+        document.getElementById("model-description").textContent = modelDescriptions[config.selectedModel] || "User-defined custom model";
+        document.getElementById("label-language").textContent = langText[config.language].language + ":";
+        document.getElementById("progress-text").textContent = langText[config.language].progressText || "Processing...";
+        UI.status.textContent = langText[config.language].statusWaiting;
         // 更新日志按钮文本（根据日志区域是否显示）
         const toggleBtn = document.getElementById("toggle-log-btn");
-        const logContainer = document.getElementById('log-container');
-        toggleBtn.textContent = logContainer.style.display === "none" ? langText[language].showLog : langText[language].hideLog;
+        toggleBtn.textContent = (UI.logContainer.style.display === "none") ? langText[config.language].showLog : langText[config.language].hideLog;
         // 更新自定义模型输入框提示
-        document.getElementById("custom-model-input").placeholder = langText[language].customModelPlaceholder;
+        document.getElementById("custom-model-input").placeholder = langText[config.language].customModelPlaceholder;
+        // 更新 Token 使用显示
+        UI.tokenUsageDisplay.textContent = langText[config.language].tokenUsage + config.tokenUsage;
     }
 
-    // -------------------- 进度条相关操作 --------------------
+    //-------------------- 进度条相关操作 --------------------
     const progressContainer = document.getElementById("progress-container");
     const progressBar = document.getElementById("progress-bar");
     let progressInterval = null;
-
     function updateProgress(value) {
         progressBar.value = value;
     }
-
-    // 进度条模拟更新
     function startFakeProgress() {
         progressInterval = setInterval(() => {
             let current = progressBar.value;
             if (current < 90) {
                 let increment = (90 - current) * 0.05;
-                if (increment < 0.5) {
-                    increment = 0.5;
-                }
+                if (increment < 0.5) increment = 0.5;
                 updateProgress(current + increment);
             } else {
                 clearInterval(progressInterval);
             }
         }, 1000);
     }
-
     function finishProgress() {
         clearInterval(progressInterval);
         updateProgress(100);
@@ -438,7 +447,19 @@
         }, 500);
     }
 
-    // -------------------- Canvas 截图 --------------------
+    //-------------------- 数学公式和 Canvas 截图 --------------------
+    // 如果存在数学公式（如 MathJax 渲染），优先抓取 LaTeX 内容
+    function captureMathContent(htmlElement) {
+        let mathElements = htmlElement.querySelectorAll('script[type="math/tex"], .MathJax, .mjx-chtml');
+        if (mathElements.length > 0) {
+            let latex = "";
+            mathElements.forEach(el => { latex += el.textContent + "\n"; });
+            logDump("Captured LaTeX Content", latex);
+            return latex;
+        }
+        return null;
+    }
+    // 截取 Canvas 图片
     function captureCanvasImage(htmlElement) {
         const canvas = htmlElement.querySelector('canvas');
         if (canvas) {
@@ -455,19 +476,35 @@
         return null;
     }
 
-    // -------------------- 向 GPT 发送请求及处理返回结果 --------------------
-    function sendContentToGPT(htmlContent, canvasDataUrl) {
+    //-------------------- 执行代码沙箱（隔离作用域） --------------------
+    function executeInSandbox(code) {
+        try {
+            const sandbox = {};
+            (new Function("sandbox", "with(sandbox) { " + code + " }"))(sandbox);
+        } catch (e) {
+            logDump("Sandbox Execution Error", e);
+            throw e;
+        }
+    }
+
+    //-------------------- GPT 请求及自动重试 --------------------
+    function sendContentToGPT(htmlContent, canvasDataUrl, latexContent) {
         const messages = [
             {
                 "role": "system",
-                "content": "You are a math assistant. Carefully analyze the provided HTML structure and canvas image (if available) to generate executable JavaScript code that fills in all required answer fields accurately. Use stable selectors such as XPath. Think step by step before answering."
+                "content": "You are a math assistant. Carefully analyze the provided HTML structure and, if available, either the extracted LaTeX content or canvas image to generate executable JavaScript code that fills in all required answer fields accurately. Use stable selectors such as XPath. Think step by step before answering."
             },
             {
                 "role": "user",
                 "content": `This is a math question. Use the following HTML structure to generate JavaScript code that fills each answer field without leaving any fields empty.\n\nHTML Structure:\n${htmlContent}`
             }
         ];
-        if (canvasDataUrl) {
+        if (latexContent) {
+            messages.push({
+                "role": "user",
+                "content": `Extracted LaTeX content:\n${latexContent}`
+            });
+        } else if (canvasDataUrl) {
             messages.push({
                 "role": "user",
                 "content": {
@@ -478,71 +515,88 @@
                 }
             });
         }
-
         const requestPayload = {
-            model: selectedModel,
+            model: config.selectedModel,
             messages: messages
         };
-
         logDump("Request Payload", requestPayload);
-
         updateProgress(15);
-        document.getElementById("status").textContent = langText[language].waitingGpt;
+        UI.status.textContent = langText[config.language].waitingGpt;
         startFakeProgress();
 
-        GM_xmlhttpRequest({
-            method: "POST",
-            url: API_BASE,
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${API_KEY}`
-            },
-            data: JSON.stringify(requestPayload),
-            onload: function(response) {
-                logDump("Raw GPT Response", response.responseText);
-                if (response.status === 200) {
-                    clearInterval(progressInterval);
-                    updateProgress(95);
-                    document.getElementById("status").textContent = langText[language].parsingResponse;
-                    try {
-                        let data = JSON.parse(response.responseText);
-                        let code = sanitizeCode(data.choices[0].message.content.trim());
-                        logDump("Cleaned JavaScript Code", code);
-                        document.getElementById("status").textContent = langText[language].executingCode;
-                        // Dump code before executing
-                        logDump("Evaluated Code", code);
-                        eval(code);
-                        if (autoSubmitEnabled) {
-                            submitAnswer();
-                            document.getElementById("status").textContent = langText[language].submissionComplete;
+        // 定义发送请求的内部函数，带重试机制
+        function attemptSend(retry) {
+            GM_xmlhttpRequest({
+                method: "POST",
+                url: config.apiBase,
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${config.apiKey}`
+                },
+                data: JSON.stringify(requestPayload),
+                onload: function(response) {
+                    logDump("Raw GPT Response", response.responseText);
+                    if (response.status === 200) {
+                        clearInterval(progressInterval);
+                        updateProgress(95);
+                        UI.status.textContent = langText[config.language].parsingResponse;
+                        try {
+                            let data = JSON.parse(response.responseText);
+                            // 若响应中包含 token 使用量，则更新 UI 和 config
+                            if (data.usage && data.usage.total_tokens) {
+                                config.tokenUsage = data.usage.total_tokens;
+                                UI.tokenUsageDisplay.textContent = langText[config.language].tokenUsage + config.tokenUsage;
+                                logDump("Token Usage", data.usage);
+                            }
+                            let code = sanitizeCode(data.choices[0].message.content.trim());
+                            logDump("Cleaned JavaScript Code", code);
+                            UI.status.textContent = langText[config.language].executingCode;
+                            // 在执行前 dump 并在沙箱中执行代码
+                            logDump("Evaluated Code", code);
+                            executeInSandbox(code);
+                            if (config.autoSubmitEnabled) {
+                                submitAnswer();
+                                UI.status.textContent = langText[config.language].submissionComplete;
+                            }
+                            finishProgress();
+                        } catch (error) {
+                            UI.status.textContent = "Error during code execution.";
+                            logDump("Code Execution Error", error);
+                            console.error("Execution error: ", error);
                         }
-                        finishProgress();
-                    } catch (error) {
-                        document.getElementById("status").textContent = "Error during code execution.";
-                        logDump("Code Execution Error", error);
-                        console.error("Execution error: ", error);
+                    } else {
+                        if (retry < config.maxRetry) {
+                            logMessage(`GPT request failed (status ${response.status}). Retrying... (${retry+1}/${config.maxRetry})`);
+                            setTimeout(() => { attemptSend(retry + 1); }, 1000);
+                        } else {
+                            clearInterval(progressInterval);
+                            updateProgress(0);
+                            progressContainer.style.display = "none";
+                            UI.status.textContent = langText[config.language].requestError + response.status;
+                            logMessage(`GPT request error, status code: ${response.status}`);
+                            console.error("GPT request error, status code: " + response.status);
+                        }
                     }
-                } else {
-                    clearInterval(progressInterval);
-                    updateProgress(0);
-                    progressContainer.style.display = "none";
-                    document.getElementById("status").textContent = langText[language].requestError + response.status;
-                    logMessage(`GPT request error, status code: ${response.status}`);
-                    console.error("GPT request error, status code: " + response.status);
+                },
+                onerror: function(error) {
+                    if (retry < config.maxRetry) {
+                        logMessage(`Request error encountered. Retrying... (${retry+1}/${config.maxRetry})`);
+                        setTimeout(() => { attemptSend(retry + 1); }, 1000);
+                    } else {
+                        clearInterval(progressInterval);
+                        updateProgress(0);
+                        progressContainer.style.display = "none";
+                        UI.status.textContent = langText[config.language].requestError + error;
+                        logDump("Request Error", error);
+                        console.error("Request error: ", error);
+                    }
                 }
-            },
-            onerror: function(error) {
-                clearInterval(progressInterval);
-                updateProgress(0);
-                progressContainer.style.display = "none";
-                document.getElementById("status").textContent = langText[language].requestError + error;
-                logDump("Request Error", error);
-                console.error("Request error: ", error);
-            }
-        });
+            });
+        }
+        attemptSend(0);
     }
 
-    // 提取返回的 JavaScript 代码
+    //-------------------- 提取返回的 JavaScript 代码 --------------------
     function sanitizeCode(responseContent) {
         const regex = /```javascript\s+([\s\S]*?)\s+```/i;
         const match = responseContent.match(regex);
@@ -555,15 +609,20 @@
         }
     }
 
-    // 模拟点击提交按钮
+    //-------------------- 模拟点击提交按钮 --------------------
     function submitAnswer() {
-        const submitButton = document.evaluate(
+        // 尝试通过 XPath 获取提交按钮，如果失败则使用备用选择器
+        let submitButton = document.evaluate(
             '/html/body/main/div/article/section/section/div/div[1]/section/div/section/div/button',
             document,
             null,
             XPathResult.FIRST_ORDERED_NODE_TYPE,
             null
         ).singleNodeValue;
+        if (!submitButton) {
+            logMessage("Primary XPath failed, trying backup selector...");
+            submitButton = document.querySelector('button.submit, button[class*="submit"]');
+        }
         if (submitButton) {
             logMessage("Auto Submit Action initiated.");
             logDump("Auto Submit Button", submitButton.outerHTML);
@@ -575,13 +634,24 @@
         }
     }
 
-    // 捕获当前问题页面的 HTML 结构及 canvas，并发送给 GPT
-    function answerQuestion() {
-        logMessage("Answer Question initiated.");
-        progressContainer.style.display = "block";
-        updateProgress(5);
-        document.getElementById("status").textContent = langText[language].analyzingHtml;
+    //-------------------- 监控 IXL 题目区域 DOM 变化 --------------------
+    function monitorDOMChanges(targetElement) {
+        if (!targetElement) return;
+        const observer = new MutationObserver(function(mutationsList) {
+            mutationsList.forEach(mutation => {
+                logDump("DOM Mutation", {
+                    type: mutation.type,
+                    addedNodes: mutation.addedNodes.length,
+                    removedNodes: mutation.removedNodes.length
+                });
+            });
+        });
+        observer.observe(targetElement, { childList: true, subtree: true });
+        logMessage("MutationObserver attached to target element.");
+    }
 
+    //-------------------- 获取 IXL 题目区域节点（主 XPath + 备用） --------------------
+    function getTargetDiv() {
         let targetDiv = document.evaluate(
             '/html/body/main/div/article/section/section/div/div[1]',
             document,
@@ -589,37 +659,49 @@
             XPathResult.FIRST_ORDERED_NODE_TYPE,
             null
         ).singleNodeValue;
+        if (!targetDiv) {
+            logMessage("Primary XPath for targetDiv failed, trying backup selector...");
+            targetDiv = document.querySelector('main div.article, main > div, article');
+        }
+        return targetDiv;
+    }
 
+    //-------------------- 捕获当前问题页面的 HTML 结构及发送给 GPT --------------------
+    function answerQuestion() {
+        logMessage("Answer Question initiated.");
+        progressContainer.style.display = "block";
+        updateProgress(5);
+        UI.status.textContent = langText[config.language].analyzingHtml;
+        let targetDiv = getTargetDiv();
         if (!targetDiv) {
             updateProgress(0);
             progressContainer.style.display = "none";
-            document.getElementById("status").textContent = "Error: HTML structure not found.";
-            logMessage("Error: HTML structure not found, check XPath.");
-            console.error("Error: HTML structure not found, check XPath.");
+            UI.status.textContent = "Error: HTML structure not found.";
+            logMessage("Error: HTML structure not found, check XPath and backup selectors.");
+            console.error("Error: HTML structure not found, check XPath and backup selectors.");
             return;
         }
-
+        // 保存当前状态以便回滚
+        config.lastTargetState = targetDiv.innerHTML;
+        logDump("Saved Last Target State", config.lastTargetState);
+        // 监控 DOM 变化
+        monitorDOMChanges(targetDiv);
         updateProgress(10);
-        document.getElementById("status").textContent = langText[language].extractingData;
+        UI.status.textContent = langText[config.language].extractingData;
         let htmlContent = targetDiv.outerHTML;
         logDump("Captured HTML", htmlContent);
-
         updateProgress(15);
-        document.getElementById("status").textContent = langText[language].constructingApi;
-
-        const canvasDataUrl = captureCanvasImage(targetDiv);
+        UI.status.textContent = langText[config.language].constructingApi;
+        // 优先抓取数学公式 LaTeX 内容
+        const latexContent = captureMathContent(targetDiv);
+        // 如果没有 LaTeX，再抓取 canvas 图片
+        const canvasDataUrl = latexContent ? null : captureCanvasImage(targetDiv);
+        logDump("Captured Math Content", latexContent);
         logDump("Captured Canvas Image Base64", canvasDataUrl);
-
-        sendContentToGPT(htmlContent, canvasDataUrl);
+        sendContentToGPT(htmlContent, canvasDataUrl, latexContent);
     }
 
-    // 监控新问题出现（已禁用Auto Answer Mode）
-    function monitorNewQuestions() {
-        // 此功能已失效，不再自动监控新问题
-        logMessage("Auto Answer Mode is disabled and will not work.");
-    }
-
-    // -------------------- 样式设置 --------------------
+    //-------------------- 样式设置 --------------------
     GM_addStyle(`
         #gpt4o-panel {
             font-family: Arial, sans-serif;
@@ -653,6 +735,10 @@
             font-size: 14px;
             border-radius: 3px;
             margin-left: 5px;
+        }
+        #gpt4o-header span#token-usage-display {
+            margin-right: 10px;
+            font-weight: bold;
         }
         #gpt4o-content {
             padding: 10px;
@@ -696,10 +782,10 @@
         }
     `);
 
-    // -------------------- 初始化 --------------------
-    // 填充 API key 和 API base 到对应输入框
-    document.getElementById("api-key-input").value = API_KEY;
-    document.getElementById("api-base-input").value = API_BASE;
-    logDump("Initial API Key", API_KEY);
-    logDump("Initial API Base", API_BASE);
+    //-------------------- 初始化：填充 API key 与 API Base --------------------
+    UI.apiKeyInput.value = config.apiKey;
+    UI.apiBaseInput.value = config.apiBase;
+    logDump("Initial API Key", config.apiKey);
+    logDump("Initial API Base", config.apiBase);
+    updateLanguageText();
 })();
