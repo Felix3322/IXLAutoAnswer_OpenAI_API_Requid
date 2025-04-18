@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         IXL Auto Answer (OpenAI API Required)
 // @namespace    http://tampermonkey.net/
-// @version      8.3
+// @version      8.5
 // @license      GPL-3.0
 // @description  Sends HTML and canvas data to AI models for math problem-solving with enhanced accuracy, configurable API base, improved GUI with progress bar, auto-answer functionality, token usage display, rollback and detailed DOM change logging. API key is tested by direct server request.
 // @match        https://*.ixl.com/*
@@ -49,8 +49,8 @@
   }
 
   let modelConfigs = JSON.parse(localStorage.getItem("myNewIxLStorage") || "{}");
-  if (!modelConfigs["gpt-4o"]) {
-    modelConfigs["gpt-4o"] = {
+  if (!modelConfigs["gpt-4.1"]) {
+    modelConfigs["gpt-4.1"] = {
       apiKey: "",
       apiBase: "https://api.openai.com/v1/chat/completions",
       discovered: false,
@@ -59,7 +59,7 @@
   }
 
   let config = {
-    selectedModel: "gpt-4o",
+    selectedModel: "gpt-4.1",
     language: localStorage.getItem("myIxLLang") || "en",
     mode: "displayOnly", // can be "autoFill" or "displayOnly"
     autoSubmit: false,
@@ -154,14 +154,18 @@
 
   // (3) MODEL DESCRIPTIONS (Fixed English)
   const modelDescDB = {
+    "gpt-4.1": "New Model, cheaper and a lot better than 4o",
+    "gpt-4.1-mini": "New Model, cheaper and a little bit better than 4o",
     "gpt-4o": "Solves images, cost-effective.",
     "gpt-4o-mini": "Text-only, cheaper.",
     "o1": "Best for images but slow & expensive.",
     "o3-mini": "Text-only, cheaper than o1.",
     "deepseek-reasoner": "No images, cheaper than o1.",
     "deepseek-chat": "No images, cheap & fast as 4o.",
-    "chatgpt-4o-least": "RLHF version, can be error-prone.",
-    "custom": "User-defined model"
+    "custom": "User-defined model",
+    "o3": "Advanced multi-step reasoning model, optimized for deep inference and cost-effective over o1.",
+    "o4-mini": "Compact variant of the o4 architecture, offering a balanced trade-off between speed, accuracy, and cost for text-only workloads.",
+    "chatgpt-4o-least": "RLHF version, better than 4o, can be error-prone.",
   };
 
   // (4) BUILD UI
@@ -377,7 +381,7 @@
     UI.modelSelect.innerHTML = "";
     const ogPre = document.createElement("optgroup");
     ogPre.label = "Predefined";
-    const builtins = ["gpt-4o","gpt-4o-mini","o1","o3-mini","deepseek-reasoner","deepseek-chat","chatgpt-4o-least"];
+const builtins = ["gpt-4.1", "gpt-4o", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o-mini", "o3", "o4-mini", "o1", "o3-mini", "deepseek-reasoner", "deepseek-chat", "chatgpt-4o-least"];
     for(const b of builtins){
       const opt = document.createElement("option");
       opt.value = b;
