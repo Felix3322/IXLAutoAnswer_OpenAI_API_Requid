@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         IXL Auto Answer (OpenAI API Required)
 // @namespace    http://tampermonkey.net/
-// @version      8.5
+// @version      8.6
 // @license      GPL-3.0
 // @description  Sends HTML and canvas data to AI models for math problem-solving with enhanced accuracy, configurable API base, improved GUI with progress bar, auto-answer functionality, token usage display, rollback and detailed DOM change logging. API key is tested by direct server request.
 // @match        https://*.ixl.com/*
@@ -10,6 +10,7 @@
 // @downloadURL  https://update.greasyfork.org/scripts/517259/IXL%20Auto%20Answer%20%28OpenAI%20API%20Required%29.user.js
 // @updateURL    https://update.greasyfork.org/scripts/517259/IXL%20Auto%20Answer%20%28OpenAI%20API%20Required%29.meta.js
 // @require      https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js
+// @require      https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
 // ==/UserScript==
 
 /*
@@ -771,9 +772,48 @@ const builtins = ["gpt-4.1", "gpt-4o", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o-m
     UI.answerBox.style.display="none";
     let systemPrompt;
     if(config.mode==="autoFill"){
-      systemPrompt="You are an IXL solver. Provide minimal steps, and final <answer> in <answer>...</answer>, plus a JS code block in triple backticks to fill answers automatically. No LaTeX outside code. You can output markdown if you want. (Note: auto fill is unstable!)";
+      systemPrompt = `
+      You are an IXL math solver with automation support.
+      
+      Your task is to:
+      1. Solve the math problem (HTML/LaTeX/canvas if provided),
+      2. Output the solution using Markdown (LaTeX formulas in $...$),
+      3. Provide final answer inside <answer>...</answer>,
+      4. AND output a JavaScript snippet inside triple backticks to fill the answer automatically.
+      
+      Important rules:
+      - DO NOT use LaTeX outside of Markdown or inside JavaScript.
+      - DO NOT include LaTeX in the <answer> tag if you plan to auto-fill it via JS.
+      - DO NOT output any math without $...$ wrapping.
+      - DO NOT use (-$...$), always write $-\\frac{3}{10}$ instead.
+      - Auto-fill code must be inside one single \`\`\`javascript code block.
+      
+      Sample structure:
+      <answer>Final Answer (plain text if needed)</answer>
+      
+      Then the steps in Markdown + code block at the end:
+      \`\`\`javascript
+      // JS to fill input field
+      document.querySelector("input").value = "-0.3";
+      \`\`\`
+      
+      Avoid redundant explanations. Focus on clarity and automation.`;
     } else {
-      systemPrompt="You are an IXL solver. Provide steps if needed, final numeric/textual result must appear in <answer>...</answer>. No code is needed. You can output markdown.";
+      systemPrompt = `
+      You are an IXL math solver.
+      
+      Your task is to read the question (HTML and LaTeX/canvas if provided), analyze the math problem, and return a solution in Markdown format.
+      
+      - All mathematical expressions must be properly formatted using LaTeX syntax and enclosed in inline math: $...$, or block math: $$...$$.
+      - Do NOT escape dollar signs. Output $...$ directly without backslashes.
+      - For example, output $-\\frac{3}{10}$, NOT -$\\frac{3}{10}$ or (-$\\frac{3}{10}$).
+      - Do not use backslashes outside math blocks.
+      - The final numeric or symbolic answer MUST appear inside an <answer>...</answer> tag.
+      - The answer tag must contain either plain text or LaTeX.
+      
+      You may use Markdown to present solution steps (headers, lists, etc.).
+      
+      Markdown output is required.`;
     }
 
     UI.statusLine.textContent=langText[config.language].statusWaiting;
@@ -821,14 +861,32 @@ const builtins = ["gpt-4.1", "gpt-4o", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o-m
           // show container
           UI.answerBox.style.display=(config.mode==="displayOnly")?"block":"none";
 
-          // parse steps as markdown
-          const stepsHtml=marked.parse(stepsText||"");
-          // parse finalAnswer as simple text or md?
-          // if you want to parse finalAnswer too:
-          const finalHtml=marked.parseInline(finalAnswer);
+          function wrapLatex(str) {
+            // 修复常见错误：(-$frac...) → $-\frac...$
+            str = str.replace(/\(-\$\\frac\{([^}]+)\}\{([^}]+)\}\$\)/g, (_, a, b) => `$-\\frac{${a}}{${b}}$`);
+            // 正常包裹裸露 \frac
+            str = str.replace(/\\frac\{[^}]+\}\{[^}]+\}/g, m => `$${m}$`);
+            return str;
+          }
 
-          UI.answerContent.innerHTML=finalHtml;
-          UI.stepsContent.innerHTML=stepsHtml;
+
+          // parse steps as markdown
+          function unescapeLatexDollar(str) {
+            return str.replace(/\\\$/g, '$');  // 把 `\$` 转回 `$`
+          }
+
+          const stepsHtml = marked.parse(wrapLatex(unescapeLatexDollar(stepsText || "")));
+          const finalHtml = marked.parse(wrapLatex(finalAnswer));
+
+
+          UI.answerContent.innerHTML = finalHtml;
+          UI.stepsContent.innerHTML = stepsHtml;
+
+          if (window.MathJax) {
+            MathJax.typesetPromise([UI.answerContent, UI.stepsContent])
+              .then(() => logMsg("MathJax rendered LaTeX in answers."))
+              .catch((e) => logMsg("MathJax render error: " + e));
+          }
 
           if(config.mode==="autoFill"){
             // look for code
@@ -925,5 +983,9 @@ const builtins = ["gpt-4.1", "gpt-4o", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o-m
     updateLangText();
     logMsg("Script loaded. Marked version for MD rendering is required via @require. Full code included. Enjoy!");
   }
+  window.MathJax = {
+    tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] },
+    svg: { fontCache: 'global' }
+  };
   initAll();
 })();
