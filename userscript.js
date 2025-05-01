@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         IXL Auto Answer (OpenAI API Required)
 // @namespace    http://tampermonkey.net/
-// @version      8.6
+// @version      8.7
 // @license      GPL-3.0
 // @description  Sends HTML and canvas data to AI models for math problem-solving with enhanced accuracy, configurable API base, improved GUI with progress bar, auto-answer functionality, token usage display, rollback and detailed DOM change logging. API key is tested by direct server request.
 // @match        https://*.ixl.com/*
@@ -258,12 +258,14 @@
       top:20px;
       right:20px;
       width:460px;
+      height:490px;
       background:#fff;
       border-radius:6px;
       box-shadow:0 2px 10px rgba(0,0,0,0.3);
       z-index:99999999;
       font-size:14px;
       font-family: "Segoe UI", Arial, sans-serif;
+      y-overflow:auto;
     }
     .ixl-header {
       background:#4caf50;
