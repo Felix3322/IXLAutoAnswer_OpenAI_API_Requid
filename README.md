@@ -9,7 +9,9 @@
 
 ## **latest screenshot**
 
-![image](https://github.com/user-attachments/assets/06015c69-e1c0-4a78-ad27-39943cfb946b)
+![image](https://github.com/user-attachments/assets/a6383e67-e68a-45d3-8290-9a00b5f30b9c)
+
+![image](https://github.com/user-attachments/assets/f51040a2-b151-4e9c-bca3-4e351203c1ca)
 
 ---
 
