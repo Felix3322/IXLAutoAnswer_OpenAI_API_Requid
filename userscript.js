@@ -35,6 +35,25 @@
 (function() {
     'use strict';
 
+    // ensure MathJax loaded
+    if (!window.MathJax) {
+        const mjs = document.createElement('script');
+        mjs.src = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js';
+        document.head.appendChild(mjs);
+    }
+
+    // Detect if running under Tampermonkey
+    if (typeof GM_info !== 'undefined' && GM_info.scriptHandler) {
+        const handler = GM_info.scriptHandler.toLowerCase();
+        if (handler !== 'tampermonkey') {
+            alert('This script is designed for Tampermonkey. You are using ' + GM_info.scriptHandler + '. Redirecting to Tampermonkey.');
+            window.open('https://www.tampermonkey.net/', '_blank');
+        }
+    } else {
+        alert('Unable to detect userscript manager. This script works best with Tampermonkey. Redirecting...');
+        window.open('https://www.tampermonkey.net/', '_blank');
+    }
+
     // (1) MIGRATION/CONFIG STORAGE
     let oldStore1 = localStorage.getItem("gpt4o-modelConfigs");
     let oldStore2 = localStorage.getItem("ixlAutoAnswerConfigs");
@@ -276,7 +295,7 @@
       z-index:99999999;
       font-size:14px;
       font-family: "Segoe UI", Arial, sans-serif;
-      y-overflow:auto;
+      overflow-y:auto;
       display:table;
     }
     #ixl-auto-panel {
@@ -946,15 +965,17 @@ const builtins = ["gpt-4.1", "gpt-4o", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o-m
                   }
 
                   if(config.mode==="autoFill"){
-                      // look for code
-                      const codeMatch=fullOut.match(/```javascript\s+([\s\S]*?)```/i);
-                      if(codeMatch && codeMatch[1]){
-                          runJsCode(codeMatch[1].trim());
-                          if(config.autoSubmit){
-                              doAutoSubmit();
+                      const filled = doAutoFill(finalAnswer);
+                      if(!filled){
+                          const codeMatch=fullOut.match(/```javascript\s+([\s\S]*?)```/i);
+                          if(codeMatch && codeMatch[1]){
+                              runJsCode(codeMatch[1].trim());
+                          } else {
+                              logMsg("No JS code found in GPT output for auto fill");
                           }
-                      } else {
-                          logMsg("No JS code found in GPT output for auto fill");
+                      }
+                      if(config.autoSubmit){
+                          doAutoSubmit();
                       }
                   }
                   UI.statusLine.textContent=langText[config.language].statusDone;
@@ -973,11 +994,25 @@ const builtins = ["gpt-4.1", "gpt-4o", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o-m
 
     function runJsCode(codeStr){
         try{
-            const sandbox={};
-            (new Function("sandbox", "with(sandbox){"+codeStr+"}"))(sandbox);
+            const s=document.createElement('script');
+            s.textContent=codeStr;
+            document.documentElement.appendChild(s);
+            s.remove();
         } catch(e){
             logDump("RunJS error", e);
         }
+    }
+
+    function doAutoFill(ans){
+        const div=getQuestionDiv();
+        const inp=div ? div.querySelector('input:not([type="hidden"]), textarea') : null;
+        if(inp){
+            const plain=ans.replace(/\$+|`|\\\(|\\\)/g,'').trim();
+            inp.value=plain;
+            inp.dispatchEvent(new Event('input',{bubbles:true}));
+            return true;
+        }
+        return false;
     }
     function doAutoSubmit(){
         let subBtn=document.evaluate(
@@ -996,10 +1031,13 @@ const builtins = ["gpt-4.1", "gpt-4o", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o-m
     }
 
     function captureLatex(div){
-        const arr=div.querySelectorAll('script[type="math/tex"], .MathJax, .mjx-chtml');
+        const arr=div.querySelectorAll('script[type="math/tex"], .MathJax, .mjx-chtml, img[data-latex]');
         if(arr.length>0){
             let latex="";
-            arr.forEach(e=>{ latex+=e.textContent+"\n"; });
+            arr.forEach(e=>{
+                if(e.tagName==='IMG' && e.dataset.latex) latex+=e.dataset.latex+"\n";
+                else latex+=e.textContent+"\n";
+            });
             return latex;
         }
         return null;
