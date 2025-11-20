@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         IXL Auto Answer (OpenAI API Required)
 // @namespace    http://tampermonkey.net/
-// @version      9.2
+// @version      9.3
 // @license      GPL-3.0
 // @description  Sends HTML and canvas data to AI models for math problem-solving with enhanced accuracy, configurable API base, improved GUI with progress bar, auto-answer functionality, token usage display, rollback and detailed DOM change logging. API key is tested by direct server request.
 // @match        https://*.ixl.com/*
@@ -810,6 +810,26 @@ const builtins = ["gpt-4.1", "gpt-4o", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o-m
         return d;
     }
 
+    // Remove styles and redundant elements to keep HTML payload minimal
+    function minifyQuestionHTML(node){
+        const clone=node.cloneNode(true);
+        const toRemove=[];
+        const walker=document.createTreeWalker(clone, NodeFilter.SHOW_ELEMENT, null);
+        let cur=walker.currentNode;
+        while(cur){
+            const tag=cur.tagName?.toLowerCase();
+            if(tag==='style' || tag==='script' || (tag==='link' && (cur.rel||'').toLowerCase()==='stylesheet')){
+                toRemove.push(cur);
+            } else {
+                cur.removeAttribute('style');
+                cur.removeAttribute('class');
+            }
+            cur=walker.nextNode();
+        }
+        toRemove.forEach(n=>n.remove());
+        return clone.outerHTML.replace(/>\s+</g,'><').replace(/\s{2,}/g,' ').trim();
+    }
+
     // progress
     let progressTimer=null;
     function startProgress(){
@@ -837,7 +857,8 @@ const builtins = ["gpt-4.1", "gpt-4o", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o-m
             return;
         }
         config.lastState = dv.innerHTML;
-        let userPrompt="HTML:\n"+dv.outerHTML+"\n";
+        const minimalHTML = minifyQuestionHTML(dv);
+        let userPrompt="HTML:\n"+minimalHTML+"\n";
         const latexCap = captureLatex(dv);
         if(latexCap) userPrompt+="LaTeX:\n"+latexCap+"\n";
         else {
