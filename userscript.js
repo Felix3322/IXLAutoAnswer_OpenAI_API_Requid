@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         IXL Auto Answer (OpenAI API Required)
 // @namespace    http://tampermonkey.net/
-// @version      9.5
+// @version      9.6
 // @license      GPL-3.0
-// @description  Sends HTML and canvas data to AI models for math problem-solving with enhanced accuracy, configurable API base, improved GUI with progress bar, auto-answer functionality, token usage display, rollback and detailed DOM change logging. Now with Smart Compression and new 2026 models!
+// @description  Sends HTML and canvas data to AI models for math problem-solving with enhanced accuracy, configurable API base, improved GUI with progress bar, auto-answer functionality, token usage display, rollback and detailed DOM change logging. Smart Compression + New 2026 Models.
 // @match        https://*.ixl.com/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
@@ -30,9 +30,6 @@
             alert('This script is designed for Tampermonkey. You are using ' + GM_info.scriptHandler + '. Redirecting to Tampermonkey.');
             window.open('https://www.tampermonkey.net/', '_blank');
         }
-    } else {
-        alert('Unable to detect userscript manager. This script works best with Tampermonkey. Redirecting...');
-        window.open('https://www.tampermonkey.net/', '_blank');
     }
 
     // (1) MIGRATION/CONFIG STORAGE
@@ -50,7 +47,6 @@
     }
 
     let modelConfigs = JSON.parse(localStorage.getItem("myNewIxLStorage") || "{}");
-    // Ensure default config exists
     if (!modelConfigs["gpt-5.2"]) {
         modelConfigs["gpt-5.2"] = {
             apiKey: "",
@@ -84,6 +80,7 @@
             startButton: "Start Answering",
             rollbackButton: "Rollback",
             configAssistant: "Config Assistant",
+            shortAI: "Ask AI",
             closeButton: "Close",
             logsButton: "Logs",
             logsHide: "Hide Logs",
@@ -123,6 +120,7 @@
             startButton: "开始答题",
             rollbackButton: "撤回",
             configAssistant: "配置助手",
+            shortAI: "询问AI",
             closeButton: "关闭",
             logsButton: "日志",
             logsHide: "隐藏日志",
@@ -156,7 +154,7 @@
         }
     };
 
-    // (3) MODEL DESCRIPTIONS (Updated for 2026 Context)
+    // (3) MODEL DESCRIPTIONS
     const modelDescDB = {
         "gpt-5.2": "OpenAI flagship (2026). High-density, ultra-efficient reasoning.",
         "gpt-5-mini": "Cost-effective GPT-5 variant. Fast and highly intelligent.",
@@ -164,8 +162,8 @@
         "o3-mini": "Lightweight reasoning model, cheaper and faster than o3.",
         "gemini-3-pro": "Google's reasoning-first model, optimized for complex agentic workflows.",
         "gemini-3-flash": "Frontier intelligence built for extreme speed and low latency.",
-        "gemini-2.5-pro": "Strong complex reasoning and coding capabilities (Mid 2025).",
-        "gemini-2.5-flash": "Balanced intelligence and latency (Mid 2025).",
+        "gemini-2.5-pro": "Strong complex reasoning and coding capabilities.",
+        "gemini-2.5-flash": "Balanced intelligence and latency.",
         "gemini-2.0-flash": "Reliable workhorse for multimodal tasks.",
         "gpt-4.1": "Refined GPT-4 architecture, better than 4o.",
         "gpt-4o": "Solves images, cost-effective standard.",
@@ -381,7 +379,7 @@
         linkGetKey: document.getElementById("link-getkey"),
         refreshBtn: document.getElementById("btn-refresh")
     };
-    let settingsopen = '0';
+
     // (7) UTILS
     function logMsg(msg) {
         const time = new Date().toLocaleString();
@@ -420,58 +418,49 @@
 
     // (8) BUILD MODEL SELECT
      function buildModelSelect() {
-    UI.modelSelect.innerHTML = "";
-    const ogPre = document.createElement("optgroup");
-    ogPre.label = "Predefined";
-    const builtins = [
-        "gpt-5.2",
-        "gpt-5-mini",
-        "o3",
-        "o3-mini",
-        "gemini-3-pro",
-        "gemini-3-flash",
-        "gemini-2.5-pro",
-        "gemini-2.5-flash",
-        "gpt-4.1",
-        "gpt-4o",
-        "gpt-4o-mini",
-        "deepseek-reasoner",
-        "deepseek-chat"
-    ];
-    for(const b of builtins){
-      const opt = document.createElement("option");
-      opt.value = b;
-      opt.textContent = b;
-      ogPre.appendChild(opt);
-    }
-    UI.modelSelect.appendChild(ogPre);
+        UI.modelSelect.innerHTML = "";
+        const ogPre = document.createElement("optgroup");
+        ogPre.label = "Predefined";
+        const builtins = [
+            "gpt-5.2", "gpt-5-mini", "o3", "o3-mini",
+            "gemini-3-pro", "gemini-3-flash", "gemini-2.5-pro", "gemini-2.5-flash",
+            "gpt-4.1", "gpt-4o", "gpt-4o-mini",
+            "deepseek-reasoner", "deepseek-chat"
+        ];
+        for(const b of builtins){
+          const opt = document.createElement("option");
+          opt.value = b;
+          opt.textContent = b;
+          ogPre.appendChild(opt);
+        }
+        UI.modelSelect.appendChild(ogPre);
 
-    const discovered = Object.keys(modelConfigs).filter(k=>modelConfigs[k].discovered);
-    if(discovered.length>0){
-      const ogDisc = document.createElement("optgroup");
-      ogDisc.label = "Discovered";
-      discovered.forEach(m=>{
-        const opt = document.createElement("option");
-        opt.value = m;
-        opt.textContent = m;
-        ogDisc.appendChild(opt);
-      });
-      UI.modelSelect.appendChild(ogDisc);
-    }
+        const discovered = Object.keys(modelConfigs).filter(k=>modelConfigs[k].discovered);
+        if(discovered.length>0){
+          const ogDisc = document.createElement("optgroup");
+          ogDisc.label = "Discovered";
+          discovered.forEach(m=>{
+            const opt = document.createElement("option");
+            opt.value = m;
+            opt.textContent = m;
+            ogDisc.appendChild(opt);
+          });
+          UI.modelSelect.appendChild(ogDisc);
+        }
 
-    const optCust = document.createElement("option");
-    optCust.value = "custom";
-    optCust.textContent = "custom";
-    UI.modelSelect.appendChild(optCust);
+        const optCust = document.createElement("option");
+        optCust.value = "custom";
+        optCust.textContent = "custom";
+        UI.modelSelect.appendChild(optCust);
 
-    if(UI.modelSelect.querySelector(`option[value="${config.selectedModel}"]`)){
-      UI.modelSelect.value = config.selectedModel;
-    } else {
-      UI.modelSelect.value = "custom";
+        if(UI.modelSelect.querySelector(`option[value="${config.selectedModel}"]`)){
+          UI.modelSelect.value = config.selectedModel;
+        } else {
+          UI.modelSelect.value = "custom";
+        }
+        UI.modelDesc.textContent = modelDescDB[config.selectedModel] || "User-defined model";
+        UI.customModelArea.style.display = (config.selectedModel==="custom")?"block":"none";
     }
-    UI.modelDesc.textContent = modelDescDB[config.selectedModel] || "User-defined model";
-    UI.customModelArea.style.display = (config.selectedModel==="custom")?"block":"none";
-  }
 
   // (9) EVENT BIND
   UI.logsBtn.addEventListener("click",()=>{
@@ -532,22 +521,21 @@
     UI.customModelArea.style.display=(config.selectedModel==="custom")?"block":"none";
     UI.modelDesc.textContent=modelDescDB[config.selectedModel]||"User-defined model";
     UI.txtApiKey.value = modelConfigs[config.selectedModel].apiKey || "";
-    
+
     // SMART API BASE SWITCHING
     let currentBase = modelConfigs[config.selectedModel].apiBase || "";
     let modLow = config.selectedModel.toLowerCase();
-    
+
     if(modLow.includes("deepseek") && !currentBase.includes("deepseek")){
       UI.txtApiBase.value="https://api.deepseek.com/v1/chat/completions";
       modelConfigs[config.selectedModel].apiBase="https://api.deepseek.com/v1/chat/completions";
     } else if(modLow.includes("gemini") && !currentBase.includes("googleapis") && !currentBase.includes("google")){
-      // Use Google's OpenAI-compatible endpoint default
       UI.txtApiBase.value="https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
       modelConfigs[config.selectedModel].apiBase="https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
     } else {
       UI.txtApiBase.value = currentBase;
     }
-    
+
     updateManageLink();
   });
   UI.customModelInput.addEventListener("change",()=>{
@@ -734,7 +722,6 @@
     }
 
     function openConfigAssistant(){
-
         const overlay=document.createElement("div");
         overlay.style.position="fixed";
         overlay.style.top="0"; overlay.style.left="0";
@@ -778,7 +765,6 @@
                 out.textContent="[Error] "+err;
             });
         });
-
     }
 
     function askAssistant(q,onSuccess,onError){
@@ -813,7 +799,7 @@
         });
     }
 
-    // --- REPLACED: NEW COMPRESSION FUNCTION ---
+    // --- COMPRESSION FUNCTION ---
     function compressIXLContent(sourceNode) {
         if (!sourceNode) return "";
 
@@ -821,7 +807,6 @@
         const clone = sourceNode.cloneNode(true);
 
         // 2. Junk Removal
-        // Extended list based on your IXL HTML sample
         const junkSelectors = [
             'script', 'style', 'noscript', 'iframe',
             '.scratchpad-bar',
@@ -842,7 +827,7 @@
             clone.querySelectorAll(sel).forEach(el => el.remove());
         });
 
-        // 3. Semantic Extraction (The Token Saver)
+        // 3. Semantic Extraction
         const semanticElements = clone.querySelectorAll('[aria-label], img[alt], svg[aria-label]');
         semanticElements.forEach(el => {
             let label = el.getAttribute('aria-label') || el.getAttribute('alt');
@@ -858,14 +843,13 @@
             }
         });
 
-        // 4. Cleanup remaining SVGs (pure decoration)
+        // 4. Cleanup remaining SVGs
         clone.querySelectorAll('svg').forEach(svg => svg.remove());
 
-        // 5. Attribute Cleanup (Deep traversal)
+        // 5. Attribute Cleanup
         const walker = document.createTreeWalker(clone, NodeFilter.SHOW_ELEMENT);
         let currentNode = walker.currentNode;
         while (currentNode) {
-            // Remove all attributes except maybe 'id' if needed, but usually safe to nuke all for AI context
             while (currentNode.attributes.length > 0) {
                 currentNode.removeAttribute(currentNode.attributes[0].name);
             }
@@ -874,11 +858,8 @@
 
         // 6. Text Cleanup
         let html = clone.innerHTML;
-        // Merge whitespace
         html = html.replace(/\s+/g, ' ').trim();
-        // Remove empty tags
         html = html.replace(/<([a-z]+)> <\/\1>/gi, '');
-        // Remove comments
         html = html.replace(//g, '');
 
         return html;
@@ -918,7 +899,7 @@
         let userPrompt="HTML:\n"+minimalHTML+"\n";
         // --------------------------
 
-        const latexCap = captureLatex(dv); // Capture from original DV so we don't miss scripts removed by compressor
+        const latexCap = captureLatex(dv);
         if(latexCap) userPrompt+="LaTeX:\n"+latexCap+"\n";
         else {
             const c64=captureCanvas(dv);
@@ -954,8 +935,8 @@
       \`\`\`
 
       Avoid redundant explanations. Focus on clarity and automation.`;
-    } else {
-        systemPrompt = `
+        } else {
+            systemPrompt = `
       You are an IXL math solver.
 
       Your task is to read the question (HTML and LaTeX/canvas if provided), analyze the math problem, and return a solution in Markdown format.
@@ -970,7 +951,7 @@
       You may use Markdown to present solution steps (headers, lists, etc.).
 
       Markdown output is required.`;
-    }
+        }
 
       UI.statusLine.textContent=langText[config.language].statusWaiting;
       startProgress();
