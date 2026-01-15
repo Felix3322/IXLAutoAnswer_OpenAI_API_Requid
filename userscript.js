@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         IXL Auto Answer (OpenAI API Required)
 // @namespace    http://tampermonkey.net/
-// @version      9.3
+// @version      9.5
 // @license      GPL-3.0
-// @description  Sends HTML and canvas data to AI models for math problem-solving with enhanced accuracy, configurable API base, improved GUI with progress bar, auto-answer functionality, token usage display, rollback and detailed DOM change logging. API key is tested by direct server request.
+// @description  Sends HTML and canvas data to AI models for math problem-solving with enhanced accuracy, configurable API base, improved GUI with progress bar, auto-answer functionality, token usage display, rollback and detailed DOM change logging. Now with Smart Compression and new 2026 models!
 // @match        https://*.ixl.com/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
@@ -12,25 +12,6 @@
 // @downloadURL https://update.greasyfork.org/scripts/517259/IXL%20Auto%20Answer%20%28OpenAI%20API%20Required%29.user.js
 // @updateURL https://update.greasyfork.org/scripts/517259/IXL%20Auto%20Answer%20%28OpenAI%20API%20Required%29.meta.js
 // ==/UserScript==
-
-/*
-  This script uses Marked (an MD rendering library). The above @require
-  line imports marked for us to parse GPT’s output if it includes markdown.
-
-  - We keep both “Auto Fill” (with code snippet insertion) and “Display Answer Only”.
-  - If user picks "Auto Fill", we hide the display answer container and show the
-    auto fill disclaimers. Conversely, "Display Answer Only" will show the final
-    answer container but won't attempt code execution.
-  - Keep the rentKey button and highlight it as it's crucial for monetization.
-  - GPT answer's solution steps can be parsed using `marked.parse(...)` to display HTML output.
-  - The rest of the logic is the same: we have multiple features:
-    * Start Answer
-    * Rollback
-    * AutoSubmit
-    * Refresh models
-    * Rent Key button (emphasized)
-    * The entire script is self-contained with your original userScript header.
-*/
 
 (function() {
     'use strict';
@@ -69,8 +50,9 @@
     }
 
     let modelConfigs = JSON.parse(localStorage.getItem("myNewIxLStorage") || "{}");
-    if (!modelConfigs["gpt-4.1"]) {
-        modelConfigs["gpt-4.1"] = {
+    // Ensure default config exists
+    if (!modelConfigs["gpt-5.2"]) {
+        modelConfigs["gpt-5.2"] = {
             apiKey: "",
             apiBase: "https://api.openai.com/v1/chat/completions",
             discovered: false,
@@ -79,7 +61,7 @@
     }
 
     let config = {
-        selectedModel: "gpt-4.1",
+        selectedModel: "gpt-5.2",
         language: localStorage.getItem("myIxLLang") || "en",
         mode: "displayOnly", // can be "autoFill" or "displayOnly"
         autoSubmit: false,
@@ -174,20 +156,24 @@
         }
     };
 
-    // (3) MODEL DESCRIPTIONS (Fixed English)
+    // (3) MODEL DESCRIPTIONS (Updated for 2026 Context)
     const modelDescDB = {
-        "gpt-4.1": "New Model, cheaper and a lot better than 4o",
-        "gpt-4.1-mini": "New Model, cheaper and a little bit better than 4o",
-        "gpt-4o": "Solves images, cost-effective.",
-        "gpt-4o-mini": "Text-only, cheaper.",
-        "o1": "Best for images but slow & expensive.",
-        "o3-mini": "Text-only, cheaper than o1.",
-        "deepseek-reasoner": "No images, cheaper than o1.",
-        "deepseek-chat": "No images, cheap & fast as 4o.",
+        "gpt-5.2": "OpenAI flagship (2026). High-density, ultra-efficient reasoning.",
+        "gpt-5-mini": "Cost-effective GPT-5 variant. Fast and highly intelligent.",
+        "o3": "OpenAI's advanced reasoning model with synthetic data generation capabilities.",
+        "o3-mini": "Lightweight reasoning model, cheaper and faster than o3.",
+        "gemini-3-pro": "Google's reasoning-first model, optimized for complex agentic workflows.",
+        "gemini-3-flash": "Frontier intelligence built for extreme speed and low latency.",
+        "gemini-2.5-pro": "Strong complex reasoning and coding capabilities (Mid 2025).",
+        "gemini-2.5-flash": "Balanced intelligence and latency (Mid 2025).",
+        "gemini-2.0-flash": "Reliable workhorse for multimodal tasks.",
+        "gpt-4.1": "Refined GPT-4 architecture, better than 4o.",
+        "gpt-4o": "Solves images, cost-effective standard.",
+        "gpt-4o-mini": "Text-only, cheaper fallback.",
+        "o1": "First gen reasoning model.",
+        "deepseek-reasoner": "DeepSeek R1/R2 series, excellent for math.",
+        "deepseek-chat": "DeepSeek V3 chat model, very cheap.",
         "custom": "User-defined model",
-        "o3": "Advanced multi-step reasoning model, optimized for deep inference and cost-effective over o1.",
-        "o4-mini": "Compact variant of the o4 architecture, offering a balanced trade-off between speed, accuracy, and cost for text-only workloads.",
-        "chatgpt-4o-least": "RLHF version, better than 4o, can be error-prone.",
     };
 
     // (4) BUILD UI
@@ -437,7 +423,21 @@
     UI.modelSelect.innerHTML = "";
     const ogPre = document.createElement("optgroup");
     ogPre.label = "Predefined";
-const builtins = ["gpt-4.1", "gpt-4o", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o-mini", "o3", "o4-mini", "o1", "o3-mini", "deepseek-reasoner", "deepseek-chat", "chatgpt-4o-least"];
+    const builtins = [
+        "gpt-5.2",
+        "gpt-5-mini",
+        "o3",
+        "o3-mini",
+        "gemini-3-pro",
+        "gemini-3-flash",
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+        "gpt-4.1",
+        "gpt-4o",
+        "gpt-4o-mini",
+        "deepseek-reasoner",
+        "deepseek-chat"
+    ];
     for(const b of builtins){
       const opt = document.createElement("option");
       opt.value = b;
@@ -532,12 +532,22 @@ const builtins = ["gpt-4.1", "gpt-4o", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o-m
     UI.customModelArea.style.display=(config.selectedModel==="custom")?"block":"none";
     UI.modelDesc.textContent=modelDescDB[config.selectedModel]||"User-defined model";
     UI.txtApiKey.value = modelConfigs[config.selectedModel].apiKey || "";
-    UI.txtApiBase.value = modelConfigs[config.selectedModel].apiBase || "";
-    // if user picks deepseek
-    if(config.selectedModel.toLowerCase().includes("deepseek")){
+    
+    // SMART API BASE SWITCHING
+    let currentBase = modelConfigs[config.selectedModel].apiBase || "";
+    let modLow = config.selectedModel.toLowerCase();
+    
+    if(modLow.includes("deepseek") && !currentBase.includes("deepseek")){
       UI.txtApiBase.value="https://api.deepseek.com/v1/chat/completions";
       modelConfigs[config.selectedModel].apiBase="https://api.deepseek.com/v1/chat/completions";
+    } else if(modLow.includes("gemini") && !currentBase.includes("googleapis") && !currentBase.includes("google")){
+      // Use Google's OpenAI-compatible endpoint default
+      UI.txtApiBase.value="https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+      modelConfigs[config.selectedModel].apiBase="https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+    } else {
+      UI.txtApiBase.value = currentBase;
     }
+    
     updateManageLink();
   });
   UI.customModelInput.addEventListener("change",()=>{
@@ -604,6 +614,8 @@ const builtins = ["gpt-4.1", "gpt-4o", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o-m
         let link="#";
         if(mod.includes("deepseek")){
             link="https://platform.deepseek.com/api_keys";
+        } else if (mod.includes("gemini")) {
+            link="https://aistudio.google.com/app/apikey";
         } else {
             link="https://platform.openai.com/api-keys";
         }
@@ -801,33 +813,75 @@ const builtins = ["gpt-4.1", "gpt-4o", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o-m
         });
     }
 
-    function getQuestionDiv(){
-        let d = document.evaluate(
-            '/html/body/main/div/article/section/section/div/div[1]',
-            document,null,XPathResult.FIRST_ORDERED_NODE_TYPE,null
-        ).singleNodeValue;
-        if(!d)d=document.querySelector('main div.article, main>div, article');
-        return d;
-    }
+    // --- REPLACED: NEW COMPRESSION FUNCTION ---
+    function compressIXLContent(sourceNode) {
+        if (!sourceNode) return "";
 
-    // Remove styles and redundant elements to keep HTML payload minimal
-    function minifyQuestionHTML(node){
-        const clone=node.cloneNode(true);
-        const toRemove=[];
-        const walker=document.createTreeWalker(clone, NodeFilter.SHOW_ELEMENT, null);
-        let cur=walker.currentNode;
-        while(cur){
-            const tag=cur.tagName?.toLowerCase();
-            if(tag==='style' || tag==='script' || (tag==='link' && (cur.rel||'').toLowerCase()==='stylesheet')){
-                toRemove.push(cur);
-            } else {
-                cur.removeAttribute('style');
-                cur.removeAttribute('class');
+        // 1. Clone to avoid damaging UI
+        const clone = sourceNode.cloneNode(true);
+
+        // 2. Junk Removal
+        // Extended list based on your IXL HTML sample
+        const junkSelectors = [
+            'script', 'style', 'noscript', 'iframe',
+            '.scratchpad-bar',
+            '.practice-item-hidden',
+            '.box-header',
+            '.practice-audio-button',
+            '.audio_speaker',
+            '.audio_waves',
+            '.reference-view',
+            '.confetti-container',
+            '.cae-content',
+            '.yui3-widget-ft',
+            'button',
+            'input[type="hidden"]'
+        ];
+
+        junkSelectors.forEach(sel => {
+            clone.querySelectorAll(sel).forEach(el => el.remove());
+        });
+
+        // 3. Semantic Extraction (The Token Saver)
+        const semanticElements = clone.querySelectorAll('[aria-label], img[alt], svg[aria-label]');
+        semanticElements.forEach(el => {
+            let label = el.getAttribute('aria-label') || el.getAttribute('alt');
+            if (label && label.trim().length > 0) {
+                // If it's a blank/input slot, identify it clearly
+                if(label.toLowerCase().includes('blank')) {
+                     const textNode = document.createTextNode(` [Input_Slot: ${label.trim()}] `);
+                     el.replaceWith(textNode);
+                } else {
+                     const textNode = document.createTextNode(` [Shape: ${label.trim()}] `);
+                     el.replaceWith(textNode);
+                }
             }
-            cur=walker.nextNode();
+        });
+
+        // 4. Cleanup remaining SVGs (pure decoration)
+        clone.querySelectorAll('svg').forEach(svg => svg.remove());
+
+        // 5. Attribute Cleanup (Deep traversal)
+        const walker = document.createTreeWalker(clone, NodeFilter.SHOW_ELEMENT);
+        let currentNode = walker.currentNode;
+        while (currentNode) {
+            // Remove all attributes except maybe 'id' if needed, but usually safe to nuke all for AI context
+            while (currentNode.attributes.length > 0) {
+                currentNode.removeAttribute(currentNode.attributes[0].name);
+            }
+            currentNode = walker.nextNode();
         }
-        toRemove.forEach(n=>n.remove());
-        return clone.outerHTML.replace(/>\s+</g,'><').replace(/\s{2,}/g,' ').trim();
+
+        // 6. Text Cleanup
+        let html = clone.innerHTML;
+        // Merge whitespace
+        html = html.replace(/\s+/g, ' ').trim();
+        // Remove empty tags
+        html = html.replace(/<([a-z]+)> <\/\1>/gi, '');
+        // Remove comments
+        html = html.replace(//g, '');
+
+        return html;
     }
 
     // progress
@@ -857,9 +911,14 @@ const builtins = ["gpt-4.1", "gpt-4o", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o-m
             return;
         }
         config.lastState = dv.innerHTML;
-        const minimalHTML = minifyQuestionHTML(dv);
+
+        // --- UPDATED LOGIC HERE ---
+        const minimalHTML = compressIXLContent(dv);
+        logMsg(`HTML Compressed: ${dv.innerHTML.length} -> ${minimalHTML.length} chars`);
         let userPrompt="HTML:\n"+minimalHTML+"\n";
-        const latexCap = captureLatex(dv);
+        // --------------------------
+
+        const latexCap = captureLatex(dv); // Capture from original DV so we don't miss scripts removed by compressor
         if(latexCap) userPrompt+="LaTeX:\n"+latexCap+"\n";
         else {
             const c64=captureCanvas(dv);
@@ -1028,7 +1087,7 @@ const builtins = ["gpt-4.1", "gpt-4o", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o-m
         const div=getQuestionDiv();
         const inp=div ? div.querySelector('input:not([type="hidden"]), textarea') : null;
         if(inp){
-            const plain=ans.replace(/\$+|`|\\\(|\\\)/g,'').trim();
+            const plain=ans.替换(/\$+|`|\\\(|\\\)/g,'').trim();
             inp.value=plain;
             inp.dispatchEvent(new Event('input',{bubbles:true}));
             return true;
